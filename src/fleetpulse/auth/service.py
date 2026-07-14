@@ -27,6 +27,20 @@ class TokenPair:
     access_expires_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentIdentity:
+    user_id: uuid.UUID
+    email: str
+    display_name: str
+    membership_id: uuid.UUID
+    organization_id: uuid.UUID
+    organization_name: str
+    organization_slug: str
+    organization_timezone: str
+    default_currency: str
+    role: MembershipRole
+
+
 class AuthService:
     def __init__(
         self,
@@ -124,6 +138,33 @@ class AuthService:
             )
             if stored is not None and stored.revoked_at is None:
                 stored.revoked_at = now
+
+    async def current_identity(self, raw_access_token: str) -> CurrentIdentity:
+        claims = self._tokens.decode(raw_access_token)
+        async with self._session_factory() as session:
+            repository = AuthRepository(session)
+            identity = await repository.get_identity_by_user_id(claims.user_id)
+        if identity is None or not identity.user.is_active:
+            raise AuthenticationError
+        role = MembershipRole(identity.membership.role)
+        if (
+            identity.membership.id != claims.membership_id
+            or identity.organization.id != claims.organization_id
+            or role is not claims.role
+        ):
+            raise AuthenticationError
+        return CurrentIdentity(
+            user_id=identity.user.id,
+            email=identity.user.email,
+            display_name=identity.user.display_name,
+            membership_id=identity.membership.id,
+            organization_id=identity.organization.id,
+            organization_name=identity.organization.name,
+            organization_slug=identity.organization.slug,
+            organization_timezone=identity.organization.timezone,
+            default_currency=identity.organization.default_currency,
+            role=role,
+        )
 
     def _new_refresh_token(
         self,

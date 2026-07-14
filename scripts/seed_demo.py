@@ -10,6 +10,7 @@ from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.security import PasswordSecurity
 from fleetpulse.inspections.models import InspectionTemplate, InspectionTemplateItem
 from fleetpulse.inspections.types import ResponseType
+from fleetpulse.maintenance.models import MaintenanceRule
 from fleetpulse.organizations.models import Organization
 from fleetpulse.shared.database import dispose_engine, get_session_factory
 from fleetpulse.vehicles.models import Vehicle, VehicleStatusHistory
@@ -82,6 +83,10 @@ DEMO_INSPECTION_ITEMS = (
     ("steering", "Steering has no unusual play or resistance", "steering"),
     ("emergency_kit", "Emergency equipment is present and secured", "safety"),
     ("documents", "Registration and required documents are present", "documents"),
+)
+DEMO_MAINTENANCE_RULES = (
+    ("Engine oil service", Decimal("10000.0"), 180),
+    ("Annual safety service", None, 365),
 )
 
 
@@ -237,6 +242,31 @@ async def seed() -> None:
                 item.required = True
                 item.sort_order = sort_order
 
+        for name, interval_km, interval_days in DEMO_MAINTENANCE_RULES:
+            rule = await session.scalar(
+                select(MaintenanceRule).where(
+                    MaintenanceRule.organization_id == organization.id,
+                    MaintenanceRule.name == name,
+                    MaintenanceRule.vehicle_id.is_(None),
+                )
+            )
+            if rule is None:
+                session.add(
+                    MaintenanceRule(
+                        id=uuid.uuid4(),
+                        organization_id=organization.id,
+                        name=name,
+                        vehicle_id=None,
+                        interval_km=interval_km,
+                        interval_days=interval_days,
+                        active=True,
+                    )
+                )
+            else:
+                rule.interval_km = interval_km
+                rule.interval_days = interval_days
+                rule.active = True
+
     print("Seeded demo-fleet identities:")
     for email in DEMO_ACCOUNTS:
         print(f"- {email}")
@@ -244,6 +274,9 @@ async def seed() -> None:
     for demo_vehicle in DEMO_VEHICLES:
         print(f"- {demo_vehicle[0]}")
     print(f"Seeded active inspection template: {DEMO_INSPECTION_TEMPLATE}")
+    print("Seeded active maintenance rules:")
+    for name, _, _ in DEMO_MAINTENANCE_RULES:
+        print(f"- {name}")
 
 
 async def main() -> None:

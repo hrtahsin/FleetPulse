@@ -833,7 +833,7 @@ function LoginView({
 }: {
   onAuthenticated: (session: Session) => void;
 }) {
-  const [email, setEmail] = useState("manager@demo.fleetpulse.local");
+  const [email, setEmail] = useState("manager@demo.fleetpulse.example.com");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

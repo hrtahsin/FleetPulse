@@ -15,11 +15,16 @@ concurrency:
 jobs:
   secrets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   backend:
     runs-on: ubuntu-latest
@@ -50,6 +55,7 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://fleetpulse:fleetpulse_ci@localhost:5432/fleetpulse
       REDIS_URL: redis://localhost:6379/0
       JWT_SECRET: ci-only-secret-value-with-at-least-32-characters
+      DEMO_USER_PASSWORD: ci-demo-password-not-for-production
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -59,8 +65,10 @@ jobs:
       - run: uv sync --frozen --extra dev
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy src apps
+      - run: uv run mypy src apps scripts
       - run: uv run alembic upgrade head
+      - run: uv run python scripts/seed_demo.py
+      - run: uv run python scripts/seed_demo.py
       - run: uv run pytest
 
   web:

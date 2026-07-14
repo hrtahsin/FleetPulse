@@ -1,4 +1,4 @@
-.PHONY: install dev up down migrate test lint format typecheck check
+.PHONY: install dev up down migrate seed test lint format typecheck check
 
 install:
 	uv sync --extra dev
@@ -16,6 +16,9 @@ down:
 migrate:
 	uv run alembic upgrade head
 
+seed:
+	uv run python scripts/seed_demo.py
+
 test:
 	uv run pytest
 	pnpm test
@@ -29,7 +32,7 @@ format:
 	pnpm format
 
 typecheck:
-	uv run mypy src apps
+	uv run mypy src apps scripts
 	pnpm typecheck
 
 check: lint typecheck test

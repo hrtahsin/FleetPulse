@@ -47,9 +47,11 @@ class MaintenanceService:
         self,
         session_factory: async_sessionmaker[AsyncSession] | None = None,
         clock: Callable[[], datetime] | None = None,
+        before_commit: Callable[[], None] | None = None,
     ) -> None:
         self._session_factory = session_factory or get_session_factory()
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._before_commit = before_commit
 
     async def list_rules(self, organization_id: uuid.UUID) -> Sequence[MaintenanceRule]:
         async with self._session_factory() as session:
@@ -286,13 +288,16 @@ class MaintenanceService:
                     item.due_at or datetime.max.replace(tzinfo=UTC),
                 ),
             )
-            return EvaluationResult(
+            result = EvaluationResult(
                 created=created,
                 updated=updated,
                 due=sum(item.status == MaintenanceScheduleStatus.DUE for item in ordered),
                 overdue=sum(item.status == MaintenanceScheduleStatus.OVERDUE for item in ordered),
                 schedules=ordered,
             )
+            if self._before_commit is not None:
+                self._before_commit()
+            return result
 
     @staticmethod
     async def _validate_vehicle(

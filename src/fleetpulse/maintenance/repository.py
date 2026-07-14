@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fleetpulse.auth.models import OrganizationMembership, User
@@ -35,6 +35,16 @@ class MaintenanceRepository:
                     MaintenanceRule.active.is_(True),
                 )
                 .order_by(MaintenanceRule.id)
+                .with_for_update()
+            )
+        ).all()
+
+    async def organization_ids_with_active_rules(self) -> Sequence[UUID]:
+        return (
+            await self._session.scalars(
+                select(distinct(MaintenanceRule.organization_id))
+                .where(MaintenanceRule.active.is_(True))
+                .order_by(MaintenanceRule.organization_id)
             )
         ).all()
 

@@ -57,6 +57,10 @@ class MaintenanceService:
         async with self._session_factory() as session:
             return await MaintenanceRepository(session).list_rules(organization_id)
 
+    async def organization_ids_with_active_rules(self) -> Sequence[uuid.UUID]:
+        async with self._session_factory() as session:
+            return await MaintenanceRepository(session).organization_ids_with_active_rules()
+
     async def create_rule(
         self,
         *,

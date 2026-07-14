@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import fleetpulse.auth.models  # noqa: F401
 import fleetpulse.organizations.models  # noqa: F401
+import fleetpulse.vehicles.models  # noqa: F401
 from fleetpulse.shared.config import get_settings
 from fleetpulse.shared.models import Base
 

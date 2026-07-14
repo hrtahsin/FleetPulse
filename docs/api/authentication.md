@@ -8,10 +8,10 @@ The idempotent seed command creates these users in the `demo-fleet` organization
 
 | Role | Email |
 |---|---|
-| Owner | `owner@demo.fleetpulse.local` |
-| Manager | `manager@demo.fleetpulse.local` |
-| Driver | `driver@demo.fleetpulse.local` |
-| Mechanic | `mechanic@demo.fleetpulse.local` |
+| Owner | `owner@demo.fleetpulse.example.com` |
+| Manager | `manager@demo.fleetpulse.example.com` |
+| Driver | `driver@demo.fleetpulse.example.com` |
+| Mechanic | `mechanic@demo.fleetpulse.example.com` |
 
 Their password comes exclusively from the local `DEMO_USER_PASSWORD` environment variable and is never stored in the repository.
 

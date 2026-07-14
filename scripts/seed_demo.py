@@ -17,10 +17,10 @@ from fleetpulse.vehicles.status import VehicleStatus
 
 DEMO_ORGANIZATION_SLUG = "demo-fleet"
 DEMO_ACCOUNTS = {
-    "owner@demo.fleetpulse.local": ("Demo Owner", MembershipRole.OWNER),
-    "manager@demo.fleetpulse.local": ("Demo Manager", MembershipRole.MANAGER),
-    "driver@demo.fleetpulse.local": ("Demo Driver", MembershipRole.DRIVER),
-    "mechanic@demo.fleetpulse.local": ("Demo Mechanic", MembershipRole.MECHANIC),
+    "owner@demo.fleetpulse.example.com": ("Demo Owner", MembershipRole.OWNER),
+    "manager@demo.fleetpulse.example.com": ("Demo Manager", MembershipRole.MANAGER),
+    "driver@demo.fleetpulse.example.com": ("Demo Driver", MembershipRole.DRIVER),
+    "mechanic@demo.fleetpulse.example.com": ("Demo Mechanic", MembershipRole.MECHANIC),
 }
 DEMO_VEHICLES = (
     (

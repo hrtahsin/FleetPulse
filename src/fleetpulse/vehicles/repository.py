@@ -82,7 +82,11 @@ class VehicleRepository:
                 VehicleStatusHistory.organization_id == organization_id,
                 VehicleStatusHistory.vehicle_id == vehicle_id,
             )
-            .order_by(VehicleStatusHistory.created_at.desc(), VehicleStatusHistory.id.desc())
+            .order_by(
+                VehicleStatusHistory.created_at.desc(),
+                VehicleStatusHistory.from_status.is_(None),
+                VehicleStatusHistory.id.desc(),
+            )
             .limit(limit)
         )
         return (await self._session.scalars(statement)).all()

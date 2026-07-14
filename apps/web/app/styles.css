@@ -1204,6 +1204,139 @@ button:disabled {
   color: #dceae5;
   font-size: 13px;
 }
+.maintenance-panel {
+  margin: 20px 0;
+  overflow: hidden;
+  border: 1px solid #263c34;
+  border-radius: 15px;
+  background: #10211b;
+}
+.maintenance-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px;
+  border-bottom: 1px solid #263c34;
+}
+.maintenance-heading h2 {
+  margin: 5px 0;
+  font-size: 20px;
+}
+.maintenance-heading > div > p:last-child {
+  margin: 0;
+  color: #82968e;
+  font-size: 10px;
+}
+.maintenance-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(320px, 1.2fr);
+}
+.maintenance-form {
+  display: grid;
+  gap: 13px;
+  padding: 24px;
+  border-right: 1px solid #263c34;
+}
+.maintenance-form h3 {
+  margin: 0 0 3px;
+  font-size: 14px;
+}
+.maintenance-form label {
+  display: grid;
+  gap: 6px;
+  color: #7d9289;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.maintenance-form input,
+.maintenance-form select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #30473e;
+  border-radius: 8px;
+  outline: 0;
+  background: #0b1915;
+  color: #e4efeb;
+}
+.maintenance-intervals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.schedule-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 24px;
+}
+.schedule-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 9px;
+  padding: 0 3px 11px;
+}
+.schedule-summary strong {
+  grid-row: span 2;
+  color: #55d2a4;
+  font-size: 28px;
+}
+.schedule-summary span {
+  font-size: 11px;
+  font-weight: 750;
+}
+.schedule-summary small {
+  color: #71867d;
+  font-size: 8px;
+}
+.schedule-card {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid #294038;
+  border-radius: 10px;
+  background: #0d1d18;
+}
+.schedule-card div {
+  display: grid;
+  gap: 4px;
+}
+.schedule-card strong {
+  font-size: 11px;
+}
+.schedule-card small {
+  color: #788d84;
+  font-size: 8px;
+}
+.schedule-state {
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #21352e;
+  color: #95aaa1;
+  font-size: 8px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+.schedule-state.state-due {
+  background: rgb(211 155 75 / 15%);
+  color: #e3b56e;
+}
+.schedule-state.state-overdue {
+  background: rgb(220 89 92 / 15%);
+  color: #ef8587;
+}
+.maintenance-empty {
+  padding: 34px 15px;
+  color: #71867d;
+  font-size: 10px;
+  text-align: center;
+}
 @media (max-width: 900px) {
   .workspace-shell {
     grid-template-columns: 74px minmax(0, 1fr);
@@ -1256,6 +1389,13 @@ button:disabled {
   }
   .safety-grid {
     grid-template-columns: 1fr;
+  }
+  .maintenance-grid {
+    grid-template-columns: 1fr;
+  }
+  .maintenance-form {
+    border-right: 0;
+    border-bottom: 1px solid #263c34;
   }
   .defect-list {
     border-right: 0;
@@ -1369,5 +1509,17 @@ button:disabled {
   }
   .defect-card {
     padding-inline: 16px;
+  }
+  .maintenance-heading {
+    align-items: flex-start;
+    padding: 18px 16px;
+  }
+  .maintenance-grid,
+  .maintenance-intervals {
+    grid-template-columns: 1fr;
+  }
+  .maintenance-form,
+  .schedule-list {
+    padding: 16px;
   }
 }

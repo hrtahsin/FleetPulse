@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fleetpulse.auth.api import router as auth_router
 from fleetpulse.defects.api import router as defect_router
 from fleetpulse.inspections.api import router as inspection_router
+from fleetpulse.maintenance.api import router as maintenance_router
 from fleetpulse.notifications.api import router as notification_router
 from fleetpulse.shared.config import get_settings
 from fleetpulse.shared.database import dispose_engine
@@ -43,6 +44,7 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)  # t
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(vehicle_router, prefix="/api/v1")
 app.include_router(inspection_router, prefix="/api/v1")
+app.include_router(maintenance_router, prefix="/api/v1")
 app.include_router(defect_router, prefix="/api/v1")
 app.include_router(notification_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")

@@ -15,6 +15,7 @@ from fleetpulse.inspections.models import (
     InspectionTemplate,
     InspectionTemplateItem,
 )
+from fleetpulse.maintenance.models import MaintenanceRule, MaintenanceSchedule
 from fleetpulse.notifications.models import Notification
 from fleetpulse.organizations.models import Organization
 from fleetpulse.outbox.models import OutboxEvent
@@ -27,7 +28,9 @@ async def auth_database() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine(get_settings().database_url, pool_pre_ping=True)
     try:
         async with engine.connect() as connection:
-            has_schema = await connection.scalar(text("SELECT to_regclass('public.inspections')"))
+            has_schema = await connection.scalar(
+                text("SELECT to_regclass('public.maintenance_schedules')")
+            )
             if has_schema is None:
                 pytest.skip("current database migrations are not available")
     except (OSError, SQLAlchemyError):
@@ -48,6 +51,8 @@ async def _clean(factory: async_sessionmaker[AsyncSession]) -> None:
         await session.execute(delete(OutboxEvent))
         await session.execute(delete(AuditEvent))
         await session.execute(delete(Notification))
+        await session.execute(delete(MaintenanceSchedule))
+        await session.execute(delete(MaintenanceRule))
         await session.execute(delete(Defect))
         await session.execute(delete(InspectionResponse))
         await session.execute(delete(Inspection))

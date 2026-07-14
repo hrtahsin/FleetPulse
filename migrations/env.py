@@ -9,6 +9,7 @@ import fleetpulse.audit.models  # noqa: F401
 import fleetpulse.auth.models  # noqa: F401
 import fleetpulse.defects.models  # noqa: F401
 import fleetpulse.inspections.models  # noqa: F401
+import fleetpulse.maintenance.models  # noqa: F401
 import fleetpulse.notifications.models  # noqa: F401
 import fleetpulse.organizations.models  # noqa: F401
 import fleetpulse.outbox.models  # noqa: F401

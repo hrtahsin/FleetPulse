@@ -4,7 +4,9 @@ import {
   canManageVehicles,
   createVehicle,
   FleetApiError,
+  evaluateMaintenanceSchedules,
   listDefects,
+  listMaintenanceRules,
   listVehicles,
   submitInspection,
   vehicleStatusLabels,
@@ -126,6 +128,29 @@ describe("fleet API client", () => {
     expect(new Headers(init.headers).get("Authorization")).toBe(
       "Bearer manager-token",
     );
+  });
+
+  it("loads maintenance rules and triggers tenant-neutral evaluation", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ items: [] }))
+      .mockResolvedValueOnce(
+        response({ created: 1, updated: 0, due: 1, overdue: 0, schedules: [] }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listMaintenanceRules("manager-token");
+    await evaluateMaintenanceSchedules("manager-token");
+
+    const [listUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [evaluateUrl, evaluateInit] = fetchMock.mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    expect(listUrl).toContain("/maintenance-rules");
+    expect(evaluateUrl).toContain("/maintenance-schedules/evaluate");
+    expect(evaluateInit.method).toBe("POST");
+    expect(listUrl).not.toContain("organization");
   });
 
   it("provides readable labels for every API status", () => {

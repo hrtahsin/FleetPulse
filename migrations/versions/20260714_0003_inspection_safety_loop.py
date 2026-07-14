@@ -155,7 +155,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index(
-        "ix_inspections_organization_id_driver_membership_id_submitted_at",
+        "ix_inspections_org_driver_submitted_at",
         "inspections",
         ["organization_id", "driver_membership_id", "submitted_at"],
         unique=False,
@@ -183,7 +183,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["template_item_id"],
             ["inspection_template_items.id"],
-            name=op.f("fk_inspection_responses_template_item_id_inspection_template_items"),
+            name="fk_inspection_responses_template_item",
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_inspection_responses")),
@@ -340,7 +340,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_audit_events")),
     )
     op.create_index(
-        "ix_audit_events_organization_id_entity_type_entity_id_created_at",
+        "ix_audit_events_org_entity_created_at",
         "audit_events",
         ["organization_id", "entity_type", "entity_id", "created_at"],
         unique=False,

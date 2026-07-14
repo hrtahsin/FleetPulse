@@ -15,7 +15,7 @@ class AuditEvent(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "audit_events"
     __table_args__ = (
         Index(
-            "ix_audit_events_organization_id_entity_type_entity_id_created_at",
+            "ix_audit_events_org_entity_created_at",
             "organization_id",
             "entity_type",
             "entity_id",

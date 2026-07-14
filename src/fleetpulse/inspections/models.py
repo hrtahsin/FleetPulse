@@ -83,7 +83,7 @@ class Inspection(UUIDPrimaryKeyMixin, Base):
             "submitted_at",
         ),
         Index(
-            "ix_inspections_organization_id_driver_membership_id_submitted_at",
+            "ix_inspections_org_driver_submitted_at",
             "organization_id",
             "driver_membership_id",
             "submitted_at",

@@ -1,0 +1,46 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+secrets/
+credentials*.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+.pypirc
+.netrc
+
+# Private product planning
+/fleetpulse-intelligence-*-development-plan.md
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv-cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Node and browser tests
+node_modules/
+.pnpm-store/
+.next/
+*.tsbuildinfo
+playwright-report/
+test-results/
+dist/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+.DS_Store

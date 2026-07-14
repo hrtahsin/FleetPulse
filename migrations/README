@@ -1,0 +1,1 @@
+Database migrations are generated and reviewed here. Run `uv run alembic upgrade head` after configuring `DATABASE_URL`.

@@ -97,6 +97,7 @@ async def _create_identity(factory: async_sessionmaker[AsyncSession]) -> None:
                 is_active=True,
             )
         )
+        await session.flush()
         session.add(
             OrganizationMembership(
                 id=uuid.uuid4(),

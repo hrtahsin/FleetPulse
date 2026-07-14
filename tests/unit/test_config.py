@@ -10,4 +10,8 @@ def test_default_access_token_ttl_is_short_lived() -> None:
 
 def test_production_rejects_development_jwt_secret() -> None:
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, environment="production")  # type: ignore[call-arg]
+        Settings(
+            _env_file=None,
+            environment="production",
+            jwt_secret="development-only-secret-change-me-123",
+        )

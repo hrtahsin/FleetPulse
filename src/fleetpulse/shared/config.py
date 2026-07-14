@@ -21,7 +21,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_production_secret(self) -> "Settings":
-        if self.environment == "production" and self.jwt_secret.startswith("development-"):
+        insecure_secrets = {
+            "development-only-secret-change-me-123",
+            "replace-with-at-least-32-random-characters",
+        }
+        if self.environment == "production" and self.jwt_secret in insecure_secrets:
             raise ValueError("JWT_SECRET must be configured for production")
         return self
 

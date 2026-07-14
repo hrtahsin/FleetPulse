@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -91,7 +94,7 @@ class FakeVehicleService:
 
     async def history(
         self, *, organization_id: uuid.UUID, vehicle_id: uuid.UUID, limit: int
-    ) -> list[VehicleStatusHistory]:
+    ) -> Sequence[VehicleStatusHistory]:
         self.last_organization_id = organization_id
         return [
             VehicleStatusHistory(

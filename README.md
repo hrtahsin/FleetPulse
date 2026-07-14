@@ -1,6 +1,6 @@
 # FleetPulse Intelligence
 
-FleetPulse is a multi-tenant fleet maintenance and operations platform. It provides a foundation for auditable vehicle inspections, defect handling, maintenance scheduling, and repair workflows. The API includes organization-scoped authentication with rotating refresh tokens and fixed role-based permissions.
+FleetPulse is a multi-tenant fleet maintenance and operations platform. It provides a foundation for auditable vehicle inspections, defect handling, maintenance scheduling, and repair workflows. The current application includes organization-scoped authentication, rotating refresh tokens, fixed role-based permissions, and tenant-isolated vehicle management with immutable status history.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ docker compose up --build
 - Liveness: http://localhost:8000/api/v1/health/live
 - Readiness: http://localhost:8000/api/v1/health/ready
 
-## Migrate and seed demo identities
+## Migrate and seed the demo fleet
 
 Set a local-only demo password in `.env`, then run the migration and seed commands:
 
@@ -27,7 +27,9 @@ Set a local-only demo password in `.env`, then run the migration and seed comman
 DEMO_USER_PASSWORD='choose-a-local-password' make migrate seed
 ```
 
-The seed is idempotent and creates owner, manager, driver, and mechanic accounts under the `demo-fleet` organization. Account addresses and authentication behavior are documented in `docs/api/authentication.md`.
+The seed is idempotent and creates owner, manager, driver, and mechanic accounts plus four operational vehicle records under the `demo-fleet` organization. Sign in through the web application with the manager account to create vehicles, search the fleet, record odometer changes, and manage status transitions.
+
+Authentication behavior is documented in `docs/api/authentication.md`; vehicle permissions, version handling, and lifecycle errors are documented in `docs/api/vehicles.md`.
 
 ## Development checks
 

@@ -58,7 +58,10 @@ def test_login_returns_access_and_refresh_tokens() -> None:
     with _client() as client:
         response = client.post(
             "/api/v1/auth/login",
-            json={"email": "manager@example.com", "password": "valid-password"},
+            json={
+                "email": "manager@demo.fleetpulse.example.com",
+                "password": "valid-password",
+            },
         )
     app.dependency_overrides.clear()
 

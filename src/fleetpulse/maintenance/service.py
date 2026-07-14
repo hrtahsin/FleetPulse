@@ -389,18 +389,24 @@ def calculate_due_thresholds(
     vehicle: Vehicle,
     schedule: MaintenanceSchedule | None,
 ) -> tuple[datetime | None, Decimal | None]:
-    base_at = schedule.last_completed_at if schedule else None
-    base_odometer = schedule.last_completed_odometer_km if schedule else None
-    due_at = (
-        (base_at or vehicle.created_at) + timedelta(days=rule.interval_days)
-        if rule.interval_days is not None
-        else None
-    )
-    due_odometer = (
-        (base_odometer or Decimal("0.0")) + rule.interval_km
-        if rule.interval_km is not None
-        else None
-    )
+    due_at: datetime | None = None
+    if rule.interval_days is not None:
+        if schedule is not None and schedule.last_completed_at is not None:
+            due_at = schedule.last_completed_at + timedelta(days=rule.interval_days)
+        elif schedule is not None and schedule.due_at is not None:
+            due_at = schedule.due_at
+        else:
+            initial_date = max(vehicle.created_at, rule.created_at)
+            due_at = initial_date + timedelta(days=rule.interval_days)
+
+    due_odometer: Decimal | None = None
+    if rule.interval_km is not None:
+        if schedule is not None and schedule.last_completed_odometer_km is not None:
+            due_odometer = schedule.last_completed_odometer_km + rule.interval_km
+        elif schedule is not None and schedule.due_odometer_km is not None:
+            due_odometer = schedule.due_odometer_km
+        else:
+            due_odometer = vehicle.odometer_km + rule.interval_km
     return due_at, due_odometer
 
 

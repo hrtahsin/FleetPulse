@@ -56,7 +56,16 @@ async def test_evaluation_is_idempotent_and_notifies_only_on_due_transition(
         actor_user_id=fixture.owner_user_id,
         request_id=uuid.uuid4(),
     )
+    async with auth_database() as session, session.begin():
+        vehicle = await session.get(Vehicle, fixture.vehicle_id)
+        assert vehicle is not None
+        vehicle.odometer_km = Decimal("23000.0")
     second = await service.evaluate(
+        organization_id=fixture.organization_id,
+        actor_user_id=fixture.owner_user_id,
+        request_id=uuid.uuid4(),
+    )
+    third = await service.evaluate(
         organization_id=fixture.organization_id,
         actor_user_id=fixture.owner_user_id,
         request_id=uuid.uuid4(),
@@ -77,9 +86,14 @@ async def test_evaluation_is_idempotent_and_notifies_only_on_due_transition(
         )
 
     assert first.created == 1
-    assert first.overdue == 1
+    assert first.overdue == 0
+    assert first.schedules[0].due_odometer_km == Decimal("22500.0")
     assert second.created == 0
     assert second.updated == 1
+    assert second.overdue == 1
+    assert third.created == 0
+    assert third.updated == 1
+    assert third.overdue == 1
     assert schedule is not None
     assert schedule.maintenance_rule_id == rule.id
     assert schedule.status == MaintenanceScheduleStatus.OVERDUE

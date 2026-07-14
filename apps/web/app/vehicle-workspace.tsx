@@ -3,9 +3,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   canManageVehicles,
+  createMaintenanceRule,
   createVehicle,
   Defect,
   DefectSeverity,
+  evaluateMaintenanceSchedules,
   FleetApiError,
   getActiveInspectionTemplate,
   getIdentity,
@@ -13,9 +15,13 @@ import {
   InspectionDetails,
   InspectionTemplate,
   listDefects,
+  listMaintenanceRules,
+  listMaintenanceSchedules,
   listNotifications,
   listVehicles,
   login,
+  MaintenanceRule,
+  MaintenanceSchedule,
   markNotificationRead,
   Notification,
   submitInspection,
@@ -112,9 +118,9 @@ export function VehicleWorkspace() {
           <a className="nav-item" href="#safety">
             <span>✓</span> Safety loop
           </a>
-          <span className="nav-item muted">
-            <span>◇</span> Work orders <small>Next</small>
-          </span>
+          <a className="nav-item" href="#maintenance">
+            <span>◇</span> Maintenance
+          </a>
         </nav>
         <div className="tenant-card">
           <span className="tenant-mark">
@@ -167,6 +173,10 @@ export function VehicleWorkspace() {
         </div>
 
         <SafetyPanel session={session} />
+
+        {canManage && (
+          <MaintenancePanel session={session} vehicles={vehicles} />
+        )}
 
         <section className="fleet-panel">
           <div className="panel-heading">
@@ -723,6 +733,199 @@ function DriverInspectionWorkspace({
         </form>
       )}
     </main>
+  );
+}
+
+function MaintenancePanel({
+  session,
+  vehicles,
+}: {
+  session: Session;
+  vehicles: Vehicle[];
+}) {
+  const [rules, setRules] = useState<MaintenanceRule[]>([]);
+  const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
+  const [name, setName] = useState("");
+  const [vehicleId, setVehicleId] = useState("");
+  const [intervalKm, setIntervalKm] = useState("");
+  const [intervalDays, setIntervalDays] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [nextRules, nextSchedules] = await Promise.all([
+        listMaintenanceRules(session.accessToken),
+        listMaintenanceSchedules(session.accessToken),
+      ]);
+      setRules(nextRules);
+      setSchedules(nextSchedules);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [session.accessToken]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function addRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await createMaintenanceRule(session.accessToken, {
+        name: name.trim(),
+        vehicle_id: vehicleId || undefined,
+        interval_km: intervalKm || undefined,
+        interval_days: intervalDays ? Number(intervalDays) : undefined,
+      });
+      setName("");
+      setVehicleId("");
+      setIntervalKm("");
+      setIntervalDays("");
+      await refresh();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function evaluate() {
+    setBusy(true);
+    setError(null);
+    try {
+      await evaluateMaintenanceSchedules(session.accessToken);
+      await refresh();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const vehicleLabels = new Map(
+    vehicles.map((vehicle) => [vehicle.id, vehicle.unit_number]),
+  );
+  const ruleLabels = new Map(rules.map((rule) => [rule.id, rule.name]));
+  const attention = schedules.filter((schedule) =>
+    ["due", "overdue"].includes(schedule.status),
+  );
+
+  return (
+    <section className="maintenance-panel" id="maintenance">
+      <div className="maintenance-heading">
+        <div>
+          <p className="section-kicker">Preventive maintenance</p>
+          <h2>Service schedules</h2>
+          <p>Due within 30 days or 1,000 km; overdue after the threshold.</p>
+        </div>
+        <button
+          className="secondary-button"
+          disabled={busy || rules.length === 0}
+          onClick={() => void evaluate()}
+        >
+          {busy ? "Working…" : "Evaluate now"}
+        </button>
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      <div className="maintenance-grid">
+        <form className="maintenance-form" onSubmit={addRule}>
+          <h3>Create a rule</h3>
+          <label>
+            Rule name
+            <input
+              required
+              maxLength={120}
+              placeholder="Engine oil service"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <label>
+            Applies to
+            <select
+              value={vehicleId}
+              onChange={(event) => setVehicleId(event.target.value)}
+            >
+              <option value="">All active vehicles</option>
+              {vehicles.map((vehicle) => (
+                <option key={vehicle.id} value={vehicle.id}>
+                  {vehicle.unit_number} · {vehicle.make} {vehicle.model}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="maintenance-intervals">
+            <label>
+              Every kilometres
+              <input
+                min="0.1"
+                step="0.1"
+                type="number"
+                value={intervalKm}
+                onChange={(event) => setIntervalKm(event.target.value)}
+              />
+            </label>
+            <label>
+              Every days
+              <input
+                max="3650"
+                min="1"
+                type="number"
+                value={intervalDays}
+                onChange={(event) => setIntervalDays(event.target.value)}
+              />
+            </label>
+          </div>
+          <button
+            className="primary-button"
+            disabled={busy || (!intervalKm && !intervalDays)}
+            type="submit"
+          >
+            Add maintenance rule
+          </button>
+        </form>
+
+        <div className="schedule-list">
+          <div className="schedule-summary">
+            <strong>{attention.length}</strong>
+            <span>items need attention</span>
+            <small>{rules.length} active and inactive rules</small>
+          </div>
+          {schedules.map((schedule) => (
+            <article key={schedule.id} className="schedule-card">
+              <span className={`schedule-state state-${schedule.status}`}>
+                {schedule.status}
+              </span>
+              <div>
+                <strong>
+                  {ruleLabels.get(schedule.maintenance_rule_id) ??
+                    "Maintenance"}
+                </strong>
+                <small>
+                  {vehicleLabels.get(schedule.vehicle_id) ?? "Vehicle"}
+                  {schedule.due_odometer_km
+                    ? ` · ${formatOdometer(schedule.due_odometer_km)} km`
+                    : ""}
+                  {schedule.due_at
+                    ? ` · ${new Date(schedule.due_at).toLocaleDateString()}`
+                    : ""}
+                </small>
+              </div>
+            </article>
+          ))}
+          {schedules.length === 0 && (
+            <div className="maintenance-empty">
+              Create a rule, then evaluate schedules to see upcoming service.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

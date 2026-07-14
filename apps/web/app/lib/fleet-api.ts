@@ -135,6 +135,40 @@ export interface Notification {
   created_at: string;
 }
 
+export type MaintenanceScheduleStatus = "upcoming" | "due" | "overdue";
+
+export interface MaintenanceRule {
+  id: string;
+  name: string;
+  vehicle_id: string | null;
+  interval_km: string | null;
+  interval_days: number | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MaintenanceSchedule {
+  id: string;
+  vehicle_id: string;
+  maintenance_rule_id: string;
+  last_completed_at: string | null;
+  last_completed_odometer_km: string | null;
+  due_at: string | null;
+  due_odometer_km: string | null;
+  status: MaintenanceScheduleStatus;
+  evaluated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MaintenanceRuleCreateInput {
+  name: string;
+  vehicle_id?: string;
+  interval_km?: string;
+  interval_days?: number;
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -268,6 +302,49 @@ export async function markNotificationRead(
 ): Promise<Notification> {
   return request<Notification>(
     `/notifications/${notificationId}/read`,
+    { method: "POST" },
+    accessToken,
+  );
+}
+
+export async function listMaintenanceRules(
+  accessToken: string,
+): Promise<MaintenanceRule[]> {
+  const result = await request<{ items: MaintenanceRule[] }>(
+    "/maintenance-rules",
+    {},
+    accessToken,
+  );
+  return result.items;
+}
+
+export async function createMaintenanceRule(
+  accessToken: string,
+  input: MaintenanceRuleCreateInput,
+): Promise<MaintenanceRule> {
+  return request<MaintenanceRule>(
+    "/maintenance-rules",
+    { method: "POST", body: JSON.stringify(input) },
+    accessToken,
+  );
+}
+
+export async function listMaintenanceSchedules(
+  accessToken: string,
+): Promise<MaintenanceSchedule[]> {
+  const result = await request<{ items: MaintenanceSchedule[] }>(
+    "/maintenance-schedules",
+    {},
+    accessToken,
+  );
+  return result.items;
+}
+
+export async function evaluateMaintenanceSchedules(
+  accessToken: string,
+): Promise<{ created: number; updated: number; due: number; overdue: number }> {
+  return request(
+    "/maintenance-schedules/evaluate",
     { method: "POST" },
     accessToken,
   );

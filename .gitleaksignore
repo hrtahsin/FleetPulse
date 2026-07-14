@@ -1,0 +1,2 @@
+# Audited fixed-value JWT secret used only by the integration-test settings fixture.
+6581880d7f479525937492cec682ab05ed41a8e3:tests/integration/test_auth_service.py:generic-api-key:71

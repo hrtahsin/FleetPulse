@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from fleetpulse.auth.models import OrganizationMembership, RefreshToken, User
 from fleetpulse.organizations.models import Organization
 from fleetpulse.shared.config import get_settings
+from fleetpulse.vehicles.models import Vehicle, VehicleAssignment, VehicleStatusHistory
 
 
 @pytest_asyncio.fixture
@@ -34,6 +35,9 @@ async def auth_database() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
 
 async def _clean(factory: async_sessionmaker[AsyncSession]) -> None:
     async with factory() as session, session.begin():
+        await session.execute(delete(VehicleStatusHistory))
+        await session.execute(delete(VehicleAssignment))
+        await session.execute(delete(Vehicle))
         await session.execute(delete(RefreshToken))
         await session.execute(delete(OrganizationMembership))
         await session.execute(delete(User))

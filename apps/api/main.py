@@ -10,6 +10,7 @@ from fleetpulse.shared.database import dispose_engine
 from fleetpulse.shared.errors import APIError, api_error_handler, validation_error_handler
 from fleetpulse.shared.health import router as health_router
 from fleetpulse.shared.request_id import RequestIDMiddleware
+from fleetpulse.vehicles.api import router as vehicle_router
 
 
 @asynccontextmanager
@@ -29,6 +30,7 @@ app.add_middleware(RequestIDMiddleware)
 app.add_exception_handler(APIError, api_error_handler)  # type: ignore[arg-type]
 app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(vehicle_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 
 

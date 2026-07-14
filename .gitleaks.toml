@@ -4,4 +4,4 @@ useDefault = true
 [[allowlists]]
 description = "Ignore the fixed integration-test JWT placeholder"
 regexTarget = "secret"
-regexes = ['''^integration-secret-with-at-least-32-characters$''']
+regexes = ['''integration-secret-with-at-least-32-characters''']

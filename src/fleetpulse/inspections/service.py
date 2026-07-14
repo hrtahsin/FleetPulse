@@ -39,6 +39,7 @@ from fleetpulse.vehicles.status import VehicleStatus
 INSPECTABLE_STATUSES = frozenset(
     {VehicleStatus.AVAILABLE, VehicleStatus.IN_SERVICE, VehicleStatus.MAINTENANCE_DUE}
 )
+IDEMPOTENCY_CONSTRAINT = "uq_inspections_organization_id"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +128,9 @@ class InspectionService:
                 if self._before_commit is not None:
                     self._before_commit()
                 return details
-        except IntegrityError:
+        except IntegrityError as error:
+            if IDEMPOTENCY_CONSTRAINT not in str(error.orig):
+                raise
             return await self._load_concurrent_replay(
                 organization_id=organization_id,
                 idempotency_key=idempotency_key,
@@ -235,7 +238,9 @@ class InspectionService:
 
         vehicle.odometer_km = submission.odometer_km
         vehicle.version += 1
-        repository.add(inspection, *responses, *defects)
+        repository.add(inspection, *responses)
+        await repository.flush()
+        repository.add(*defects)
         critical_defects = [
             defect for defect in defects if defect.severity == DefectSeverity.CRITICAL
         ]

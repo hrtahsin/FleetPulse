@@ -143,3 +143,6 @@ class InspectionRepository:
 
     def add(self, *records: object) -> None:
         self._session.add_all(records)
+
+    async def flush(self) -> None:
+        await self._session.flush()

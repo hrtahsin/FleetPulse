@@ -118,9 +118,10 @@ class AuthService:
                         user_agent=user_agent,
                         now=now,
                     )
+                    repository.add_refresh_token(replacement)
+                    await session.flush()
                     stored.revoked_at = now
                     stored.replaced_by_token_id = replacement.id
-                    repository.add_refresh_token(replacement)
                     result = self._token_pair(identity, replacement_raw, now)
 
         if failure is not None:

@@ -5,8 +5,13 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import fleetpulse.audit.models  # noqa: F401
 import fleetpulse.auth.models  # noqa: F401
+import fleetpulse.defects.models  # noqa: F401
+import fleetpulse.inspections.models  # noqa: F401
+import fleetpulse.notifications.models  # noqa: F401
 import fleetpulse.organizations.models  # noqa: F401
+import fleetpulse.outbox.models  # noqa: F401
 import fleetpulse.vehicles.models  # noqa: F401
 from fleetpulse.shared.config import get_settings
 from fleetpulse.shared.models import Base

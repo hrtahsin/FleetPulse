@@ -8,6 +8,8 @@ from sqlalchemy import select
 from fleetpulse.auth.models import OrganizationMembership, User
 from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.security import PasswordSecurity
+from fleetpulse.inspections.models import InspectionTemplate, InspectionTemplateItem
+from fleetpulse.inspections.types import ResponseType
 from fleetpulse.organizations.models import Organization
 from fleetpulse.shared.database import dispose_engine, get_session_factory
 from fleetpulse.vehicles.models import Vehicle, VehicleStatusHistory
@@ -65,6 +67,21 @@ DEMO_VEHICLES = (
         "126205.8",
         VehicleStatus.OUT_OF_SERVICE,
     ),
+)
+DEMO_INSPECTION_TEMPLATE = "Pre-shift safety inspection"
+DEMO_INSPECTION_ITEMS = (
+    ("exterior_lights", "Headlights, brake lights, and signals operate", "exterior"),
+    ("tires_wheels", "Tires and wheels show no unsafe damage", "tires"),
+    ("mirrors_glass", "Mirrors and glass are secure and clear", "visibility"),
+    ("fluid_leaks", "No visible fuel, oil, or coolant leaks", "engine"),
+    ("engine_fluids", "Engine fluid levels are within safe range", "engine"),
+    ("seat_belts", "Seat belts latch and retract correctly", "cab"),
+    ("horn", "Horn operates correctly", "cab"),
+    ("service_brakes", "Service brakes respond normally", "brakes"),
+    ("parking_brake", "Parking brake holds the vehicle", "brakes"),
+    ("steering", "Steering has no unusual play or resistance", "steering"),
+    ("emergency_kit", "Emergency equipment is present and secured", "safety"),
+    ("documents", "Registration and required documents are present", "documents"),
 )
 
 
@@ -173,12 +190,60 @@ async def seed() -> None:
                 )
             )
 
+        template = await session.scalar(
+            select(InspectionTemplate).where(
+                InspectionTemplate.organization_id == organization.id,
+                InspectionTemplate.name == DEMO_INSPECTION_TEMPLATE,
+                InspectionTemplate.version == 1,
+            )
+        )
+        if template is None:
+            template = InspectionTemplate(
+                id=uuid.uuid4(),
+                organization_id=organization.id,
+                name=DEMO_INSPECTION_TEMPLATE,
+                version=1,
+                is_active=True,
+            )
+            session.add(template)
+            await session.flush()
+        else:
+            template.is_active = True
+
+        for sort_order, (code, label, category) in enumerate(DEMO_INSPECTION_ITEMS):
+            item = await session.scalar(
+                select(InspectionTemplateItem).where(
+                    InspectionTemplateItem.template_id == template.id,
+                    InspectionTemplateItem.code == code,
+                )
+            )
+            if item is None:
+                session.add(
+                    InspectionTemplateItem(
+                        id=uuid.uuid4(),
+                        template_id=template.id,
+                        code=code,
+                        label=label,
+                        category=category,
+                        response_type=ResponseType.PASS_FAIL,
+                        required=True,
+                        sort_order=sort_order,
+                    )
+                )
+            else:
+                item.label = label
+                item.category = category
+                item.response_type = ResponseType.PASS_FAIL
+                item.required = True
+                item.sort_order = sort_order
+
     print("Seeded demo-fleet identities:")
     for email in DEMO_ACCOUNTS:
         print(f"- {email}")
     print("Seeded demo-fleet vehicles:")
     for demo_vehicle in DEMO_VEHICLES:
         print(f"- {demo_vehicle[0]}")
+    print(f"Seeded active inspection template: {DEMO_INSPECTION_TEMPLATE}")
 
 
 async def main() -> None:

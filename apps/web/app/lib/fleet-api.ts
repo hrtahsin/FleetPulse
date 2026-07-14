@@ -63,6 +63,78 @@ export interface VehicleUpdateInput {
   status_reason?: string;
 }
 
+export type DefectSeverity = "minor" | "major" | "critical";
+export type DefectStatus =
+  "open" | "triaged" | "in_repair" | "resolved" | "dismissed";
+
+export interface InspectionTemplateItem {
+  id: string;
+  code: string;
+  label: string;
+  category: string;
+  response_type: "pass_fail" | "boolean" | "text" | "number";
+  required: boolean;
+  sort_order: number;
+}
+
+export interface InspectionTemplate {
+  id: string;
+  name: string;
+  version: number;
+  items: InspectionTemplateItem[];
+}
+
+export interface InspectionResponseInput {
+  template_item_id: string;
+  result: string;
+  comment?: string;
+  defect?: {
+    category: string;
+    description: string;
+    severity: DefectSeverity;
+  };
+}
+
+export interface InspectionSubmitInput {
+  vehicle_id: string;
+  template_id: string;
+  odometer_km: string;
+  notes?: string;
+  responses: InspectionResponseInput[];
+}
+
+export interface InspectionDetails {
+  id: string;
+  vehicle_id: string;
+  odometer_km: string;
+  status: "submitted" | "reviewed";
+  submitted_at: string;
+  replayed: boolean;
+  defects: Defect[];
+}
+
+export interface Defect {
+  id: string;
+  inspection_id: string;
+  vehicle_id: string;
+  category: string;
+  description: string;
+  severity: DefectSeverity;
+  status: DefectStatus;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -141,6 +213,62 @@ export async function updateVehicle(
   return request<Vehicle>(
     `/vehicles/${vehicleId}`,
     { method: "PATCH", body: JSON.stringify(input) },
+    accessToken,
+  );
+}
+
+export async function getActiveInspectionTemplate(
+  accessToken: string,
+): Promise<InspectionTemplate> {
+  return request<InspectionTemplate>(
+    "/inspection-templates/active",
+    {},
+    accessToken,
+  );
+}
+
+export async function submitInspection(
+  accessToken: string,
+  idempotencyKey: string,
+  input: InspectionSubmitInput,
+): Promise<InspectionDetails> {
+  return request<InspectionDetails>(
+    "/inspections",
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(input),
+    },
+    accessToken,
+  );
+}
+
+export async function listDefects(accessToken: string): Promise<Defect[]> {
+  const result = await request<{ items: Defect[] }>(
+    "/defects?status=open&limit=50",
+    {},
+    accessToken,
+  );
+  return result.items;
+}
+
+export async function listNotifications(
+  accessToken: string,
+): Promise<{ items: Notification[]; unread_count: number }> {
+  return request<{ items: Notification[]; unread_count: number }>(
+    "/notifications?unread_only=true&limit=20",
+    {},
+    accessToken,
+  );
+}
+
+export async function markNotificationRead(
+  accessToken: string,
+  notificationId: string,
+): Promise<Notification> {
+  return request<Notification>(
+    `/notifications/${notificationId}/read`,
+    { method: "POST" },
     accessToken,
   );
 }

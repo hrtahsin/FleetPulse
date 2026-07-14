@@ -1,0 +1,2 @@
+class DefectNotFoundError(Exception):
+    pass

@@ -1,1 +1,1 @@
-"""Notification domain."""
+"""Persisted user notification domain."""

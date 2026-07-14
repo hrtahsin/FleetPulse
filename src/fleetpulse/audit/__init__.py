@@ -1,1 +1,1 @@
-"""Audit-event domain."""
+"""Durable audit trail domain."""

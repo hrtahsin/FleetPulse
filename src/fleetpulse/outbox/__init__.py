@@ -1,1 +1,1 @@
-"""Transactional-outbox domain."""
+"""Transactional outbox domain."""

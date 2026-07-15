@@ -1,10 +1,11 @@
 # FleetPulse Intelligence
 
 FleetPulse is a multi-tenant fleet maintenance and operations platform. It provides auditable
-vehicle inspections, defect handling, and preventive-maintenance scheduling. The current
+vehicle inspections, defect handling, preventive-maintenance scheduling, and repair execution. The current
 application includes organization-scoped authentication, rotating refresh tokens, fixed role-based
 permissions, tenant-isolated vehicle management with immutable status history, an atomic critical
-defect safety loop, and date/odometer maintenance evaluation.
+defect safety loop, date/odometer maintenance evaluation, and a versioned work-order lifecycle
+with mechanic assignment, notes, cost totals, and manager verification.
 
 ## Prerequisites
 
@@ -34,8 +35,9 @@ DEMO_USER_PASSWORD='choose-a-local-password' make migrate seed
 The seed is idempotent and creates owner, manager, driver, and mechanic accounts, four operational
 vehicles, a pre-shift inspection template, and two maintenance rules under the `demo-fleet`
 organization. Sign in through the web application with the manager account to manage vehicles,
-review safety defects, define maintenance rules, and evaluate schedules. Drivers receive the
-responsive pre-shift inspection workflow.
+review safety defects, define maintenance rules, evaluate schedules, and create assigned work
+orders. Mechanics receive an assigned repair queue for recording diagnosis, labour, parts, and
+completion. Drivers receive the responsive pre-shift inspection workflow.
 
 API behavior is documented in:
 
@@ -43,6 +45,7 @@ API behavior is documented in:
 - `docs/api/vehicles.md`
 - `docs/api/inspections.md`
 - `docs/api/maintenance.md`
+- `docs/api/work-orders.md`
 
 ## Development checks
 

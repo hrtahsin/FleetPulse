@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fleetpulse.notifications.exceptions import NotificationNotFoundError
@@ -60,3 +60,43 @@ class NotificationService:
             if notification.read_at is None:
                 notification.read_at = datetime.now(UTC)
             return notification
+
+    async def unread_count(
+        self, *, organization_id: uuid.UUID, recipient_user_id: uuid.UUID
+    ) -> int:
+        async with self._session_factory() as session:
+            return int(
+                await session.scalar(
+                    select(func.count(Notification.id)).where(
+                        Notification.organization_id == organization_id,
+                        Notification.recipient_user_id == recipient_user_id,
+                        Notification.read_at.is_(None),
+                    )
+                )
+                or 0
+            )
+
+    async def mark_all_read(
+        self, *, organization_id: uuid.UUID, recipient_user_id: uuid.UUID
+    ) -> int:
+        async with self._session_factory() as session, session.begin():
+            unread = int(
+                await session.scalar(
+                    select(func.count(Notification.id)).where(
+                        Notification.organization_id == organization_id,
+                        Notification.recipient_user_id == recipient_user_id,
+                        Notification.read_at.is_(None),
+                    )
+                )
+                or 0
+            )
+            await session.execute(
+                update(Notification)
+                .where(
+                    Notification.organization_id == organization_id,
+                    Notification.recipient_user_id == recipient_user_id,
+                    Notification.read_at.is_(None),
+                )
+                .values(read_at=datetime.now(UTC))
+            )
+            return unread

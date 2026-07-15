@@ -7,6 +7,7 @@ from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fleetpulse.auth.models import OrganizationMembership, RefreshToken, User
+from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.organizations.models import Organization
 
 
@@ -15,6 +16,12 @@ class IdentityRecord:
     user: User
     membership: OrganizationMembership
     organization: Organization
+
+
+@dataclass(frozen=True, slots=True)
+class MemberRecord:
+    membership: OrganizationMembership
+    user: User
 
 
 class AuthRepository:
@@ -42,6 +49,20 @@ class AuthRepository:
         if row is None:
             return None
         return IdentityRecord(user=row[0], membership=row[1], organization=row[2])
+
+    async def list_members(
+        self, organization_id: UUID, role: MembershipRole | None
+    ) -> list[MemberRecord]:
+        statement = (
+            select(OrganizationMembership, User)
+            .join(User, User.id == OrganizationMembership.user_id)
+            .where(OrganizationMembership.organization_id == organization_id)
+            .order_by(User.display_name, OrganizationMembership.id)
+        )
+        if role is not None:
+            statement = statement.where(OrganizationMembership.role == role)
+        rows = (await self._session.execute(statement)).all()
+        return [MemberRecord(membership=row[0], user=row[1]) for row in rows]
 
     async def get_refresh_token_for_update(self, token_hash: str) -> RefreshToken | None:
         statement = (

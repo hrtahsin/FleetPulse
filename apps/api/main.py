@@ -16,6 +16,7 @@ from fleetpulse.shared.errors import APIError, api_error_handler, validation_err
 from fleetpulse.shared.health import router as health_router
 from fleetpulse.shared.request_id import RequestIDMiddleware
 from fleetpulse.vehicles.api import router as vehicle_router
+from fleetpulse.work_orders.api import router as work_order_router
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ app.include_router(inspection_router, prefix="/api/v1")
 app.include_router(maintenance_router, prefix="/api/v1")
 app.include_router(defect_router, prefix="/api/v1")
 app.include_router(notification_router, prefix="/api/v1")
+app.include_router(work_order_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 
 

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fleetpulse.auth.exceptions import AuthenticationError, TokenReuseError
 from fleetpulse.auth.models import RefreshToken
-from fleetpulse.auth.repository import AuthRepository, IdentityRecord
+from fleetpulse.auth.repository import AuthRepository, IdentityRecord, MemberRecord
 from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.security import (
     PasswordSecurity,
@@ -166,6 +166,12 @@ class AuthService:
             default_currency=identity.organization.default_currency,
             role=role,
         )
+
+    async def list_members(
+        self, organization_id: uuid.UUID, role: MembershipRole | None
+    ) -> list[MemberRecord]:
+        async with self._session_factory() as session:
+            return await AuthRepository(session).list_members(organization_id, role)
 
     def _new_refresh_token(
         self,

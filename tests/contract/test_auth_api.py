@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 from apps.api.main import app
 from fleetpulse.auth.dependencies import get_auth_service
 from fleetpulse.auth.exceptions import AuthenticationError
+from fleetpulse.auth.models import OrganizationMembership, User
+from fleetpulse.auth.repository import MemberRecord
 from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.service import CurrentIdentity, TokenPair
 
@@ -39,6 +41,27 @@ class FakeAuthService:
             default_currency="CAD",
             role=MembershipRole.MANAGER,
         )
+
+    async def list_members(
+        self, organization_id: uuid.UUID, role: MembershipRole | None
+    ) -> list[MemberRecord]:
+        return [
+            MemberRecord(
+                membership=OrganizationMembership(
+                    id=uuid.UUID("44444444-4444-4444-4444-444444444444"),
+                    organization_id=organization_id,
+                    user_id=uuid.UUID("55555555-5555-5555-5555-555555555555"),
+                    role=role or MembershipRole.MECHANIC,
+                ),
+                user=User(
+                    id=uuid.UUID("55555555-5555-5555-5555-555555555555"),
+                    email="mechanic@example.com",
+                    display_name="Demo Mechanic",
+                    password_hash="not-used",
+                    is_active=True,
+                ),
+            )
+        ]
 
 
 def _token_pair() -> TokenPair:
@@ -120,3 +143,24 @@ def test_me_returns_server_derived_tenant_context() -> None:
     assert response.status_code == 200
     assert response.json()["organization"]["id"] == "33333333-3333-3333-3333-333333333333"
     assert response.json()["role"] == "manager"
+
+
+def test_manager_lists_mechanics_in_the_authenticated_tenant() -> None:
+    with _client() as client:
+        response = client.get(
+            "/api/v1/members?role=mechanic",
+            headers={"Authorization": "Bearer valid"},
+        )
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "membership_id": "44444444-4444-4444-4444-444444444444",
+            "user_id": "55555555-5555-5555-5555-555555555555",
+            "email": "mechanic@example.com",
+            "display_name": "Demo Mechanic",
+            "role": "mechanic",
+            "is_active": True,
+        }
+    ]

@@ -41,3 +41,16 @@ class MeResponse(BaseModel):
     membership_id: uuid.UUID
     role: MembershipRole
     organization: OrganizationSummary
+
+
+class MemberResponse(BaseModel):
+    membership_id: uuid.UUID
+    user_id: uuid.UUID
+    email: EmailStr
+    display_name: str
+    role: MembershipRole
+    is_active: bool
+
+
+class MemberListResponse(BaseModel):
+    items: list[MemberResponse]

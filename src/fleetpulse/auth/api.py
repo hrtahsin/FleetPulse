@@ -1,12 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 
-from fleetpulse.auth.dependencies import get_auth_service, get_current_identity
+from fleetpulse.auth.dependencies import get_auth_service, get_current_identity, require_roles
 from fleetpulse.auth.exceptions import AuthenticationError
+from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.schemas import (
     LoginRequest,
     LogoutRequest,
+    MemberListResponse,
+    MemberResponse,
     MeResponse,
     OrganizationSummary,
     RefreshRequest,
@@ -16,6 +19,7 @@ from fleetpulse.auth.service import AuthService, CurrentIdentity, TokenPair
 from fleetpulse.shared.errors import APIError
 
 router = APIRouter(tags=["authentication"])
+member_reader = require_roles(MembershipRole.OWNER, MembershipRole.MANAGER)
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -70,6 +74,28 @@ async def me(
             timezone=identity.organization_timezone,
             default_currency=identity.default_currency,
         ),
+    )
+
+
+@router.get("/members", response_model=MemberListResponse)
+async def list_members(
+    identity: Annotated[CurrentIdentity, Depends(member_reader)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
+    role: Annotated[MembershipRole | None, Query()] = None,
+) -> MemberListResponse:
+    records = await service.list_members(identity.organization_id, role)
+    return MemberListResponse(
+        items=[
+            MemberResponse(
+                membership_id=record.membership.id,
+                user_id=record.user.id,
+                email=record.user.email,
+                display_name=record.user.display_name,
+                role=MembershipRole(record.membership.role),
+                is_active=record.user.is_active,
+            )
+            for record in records
+        ]
     )
 
 

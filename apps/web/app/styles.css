@@ -1337,6 +1337,279 @@ button:disabled {
   font-size: 10px;
   text-align: center;
 }
+.work-order-panel {
+  margin-bottom: 25px;
+  overflow: hidden;
+  border: 1px solid #253b34;
+  border-radius: 15px;
+  background: #10201b;
+}
+.work-order-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 24px 26px;
+  border-bottom: 1px solid #253b34;
+}
+.work-order-heading h2,
+.work-order-detail h3,
+.work-order-create h3,
+.repair-entry-grid h4,
+.repair-history h4 {
+  margin: 0;
+}
+.work-order-heading p:not(.section-kicker) {
+  margin: 5px 0 0;
+  color: #82958d;
+  font-size: 10px;
+}
+.work-order-count {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgb(85 210 164 / 12%);
+  color: #68d5ac;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.work-order-create {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr 0.65fr 0.8fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 18px 24px;
+  border-bottom: 1px solid #253b34;
+  background: #0d1c17;
+}
+.work-order-create label,
+.transition-box label {
+  display: grid;
+  gap: 6px;
+  color: #9baca5;
+  font-size: 9px;
+  font-weight: 750;
+}
+.work-order-create input,
+.work-order-create select,
+.work-order-create textarea,
+.transition-box input,
+.repair-entry-grid input,
+.repair-entry-grid select,
+.repair-entry-grid textarea {
+  width: 100%;
+  border: 1px solid #30483f;
+  border-radius: 8px;
+  background: #13251f;
+  color: #f2f7f4;
+  font: inherit;
+  outline: 0;
+}
+.work-order-create input,
+.work-order-create select,
+.transition-box input,
+.repair-entry-grid input,
+.repair-entry-grid select {
+  height: 38px;
+  padding: 0 10px;
+}
+.work-order-create textarea,
+.repair-entry-grid textarea {
+  min-height: 72px;
+  padding: 10px;
+  resize: vertical;
+}
+.work-order-description {
+  grid-column: 1 / 5;
+}
+.work-order-grid {
+  display: grid;
+  grid-template-columns: minmax(270px, 0.8fr) minmax(0, 1.5fr);
+  min-height: 420px;
+}
+.work-order-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 18px;
+  border-right: 1px solid #253b34;
+  background: #0c1a16;
+}
+.work-order-card {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px;
+  border: 1px solid #263d35;
+  border-radius: 10px;
+  background: #11231d;
+  color: #edf5f1;
+  text-align: left;
+}
+.work-order-card:hover,
+.work-order-card.selected {
+  border-color: #4f9f82;
+  background: #172c25;
+}
+.work-order-card div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.work-order-card strong {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-order-card small {
+  color: #758a81;
+  font-size: 8px;
+}
+.priority-dot {
+  width: 7px;
+  height: 28px;
+  border-radius: 5px;
+  background: #688078;
+}
+.priority-high {
+  background: #d6a654;
+}
+.priority-critical {
+  background: #df6568;
+}
+.priority-low {
+  background: #5e8fce;
+}
+.work-state {
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #263c34;
+  color: #a2b2ac;
+  font-size: 7px;
+  font-weight: 850;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.work-state.state-in_progress,
+.work-state.state-approved {
+  background: rgb(85 140 210 / 15%);
+  color: #82aee5;
+}
+.work-state.state-completed,
+.work-state.state-verified,
+.work-state.state-closed {
+  background: rgb(85 210 164 / 14%);
+  color: #70d8b1;
+}
+.work-state.state-cancelled {
+  background: rgb(220 89 92 / 14%);
+  color: #e98284;
+}
+.work-order-detail {
+  min-width: 0;
+  padding: 24px;
+}
+.work-order-detail-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+}
+.work-order-detail-heading small {
+  color: #6f857c;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.work-order-detail-heading h3 {
+  margin-top: 5px;
+  font-size: 17px;
+}
+.work-order-detail-heading p {
+  max-width: 620px;
+  margin: 7px 0 0;
+  color: #8b9d96;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.repair-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 20px 0;
+}
+.repair-totals span {
+  display: grid;
+  gap: 3px;
+  padding: 11px;
+  border: 1px solid #263d35;
+  border-radius: 9px;
+  color: #748980;
+  font-size: 8px;
+}
+.repair-totals strong {
+  color: #e8f1ed;
+  font-size: 11px;
+}
+.transition-box {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 13px;
+  border-radius: 10px;
+  background: #0d1b17;
+}
+.transition-box > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.repair-entry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.repair-entry-grid form {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #263d35;
+  border-radius: 10px;
+  background: #0f1f1a;
+}
+.repair-entry-grid h4,
+.repair-history h4 {
+  font-size: 10px;
+}
+.repair-entry-grid form > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.repair-history {
+  display: grid;
+  gap: 8px;
+}
+.repair-history article {
+  padding: 11px 12px;
+  border-left: 2px solid #456f60;
+  background: #0e1d18;
+}
+.repair-history p {
+  margin: 0 0 5px;
+  color: #b7c5c0;
+  font-size: 9px;
+  line-height: 1.5;
+}
+.repair-history small {
+  color: #6d8179;
+  font-size: 7px;
+}
 @media (max-width: 900px) {
   .workspace-shell {
     grid-template-columns: 74px minmax(0, 1fr);
@@ -1392,6 +1665,19 @@ button:disabled {
   }
   .maintenance-grid {
     grid-template-columns: 1fr;
+  }
+  .work-order-create {
+    grid-template-columns: 1fr 1fr;
+  }
+  .work-order-description {
+    grid-column: 1 / -1;
+  }
+  .work-order-grid {
+    grid-template-columns: 1fr;
+  }
+  .work-order-list {
+    border-right: 0;
+    border-bottom: 1px solid #253b34;
   }
   .maintenance-form {
     border-right: 0;
@@ -1521,5 +1807,18 @@ button:disabled {
   .maintenance-form,
   .schedule-list {
     padding: 16px;
+  }
+  .work-order-heading,
+  .work-order-create,
+  .work-order-detail {
+    padding: 16px;
+  }
+  .work-order-create,
+  .repair-entry-grid,
+  .transition-box {
+    grid-template-columns: 1fr;
+  }
+  .repair-totals {
+    grid-template-columns: 1fr 1fr;
   }
 }

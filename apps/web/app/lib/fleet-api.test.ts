@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  addWorkOrderCostItem,
   canManageVehicles,
   createVehicle,
   FleetApiError,
@@ -8,7 +9,9 @@ import {
   listDefects,
   listMaintenanceRules,
   listVehicles,
+  listWorkOrders,
   submitInspection,
+  transitionWorkOrder,
   vehicleStatusLabels,
 } from "./fleet-api";
 
@@ -150,6 +153,53 @@ describe("fleet API client", () => {
     expect(listUrl).toContain("/maintenance-rules");
     expect(evaluateUrl).toContain("/maintenance-schedules/evaluate");
     expect(evaluateInit.method).toBe("POST");
+    expect(listUrl).not.toContain("organization");
+  });
+
+  it("uses versioned tenant-neutral work-order mutations", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ items: [] }))
+      .mockResolvedValueOnce(response({ id: "order-1", version: 4 }))
+      .mockResolvedValueOnce(
+        response({
+          item: { id: "cost-1" },
+          work_order: { id: "order-1", version: 5 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await listWorkOrders("mechanic-token");
+    await transitionWorkOrder("mechanic-token", "order-1", {
+      version: 3,
+      status: "in_progress",
+      note: "Diagnosis started",
+    });
+    await addWorkOrderCostItem("mechanic-token", "order-1", {
+      version: 4,
+      kind: "labour",
+      description: "Diagnosis",
+      quantity: "1.50",
+      unit_cost: "95.00",
+    });
+
+    const [listUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [transitionUrl, transitionInit] = fetchMock.mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    const [costUrl, costInit] = fetchMock.mock.calls[2] as [
+      string,
+      RequestInit,
+    ];
+    expect(listUrl).toContain("/work-orders?limit=50");
+    expect(transitionUrl).toContain("/work-orders/order-1/transitions");
+    expect(transitionInit.method).toBe("POST");
+    expect(JSON.parse(String(transitionInit.body))).toMatchObject({
+      version: 3,
+    });
+    expect(costUrl).toContain("/work-orders/order-1/cost-items");
+    expect(JSON.parse(String(costInit.body))).toMatchObject({ version: 4 });
     expect(listUrl).not.toContain("organization");
   });
 

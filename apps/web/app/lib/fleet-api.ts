@@ -135,7 +135,8 @@ export interface Notification {
   created_at: string;
 }
 
-export type MaintenanceScheduleStatus = "upcoming" | "due" | "overdue";
+export type MaintenanceScheduleStatus =
+  "upcoming" | "due" | "overdue" | "completed" | "dismissed";
 
 export interface MaintenanceRule {
   id: string;
@@ -167,6 +168,84 @@ export interface MaintenanceRuleCreateInput {
   vehicle_id?: string;
   interval_km?: string;
   interval_days?: number;
+}
+
+export interface Member {
+  membership_id: string;
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: MembershipRole;
+  is_active: boolean;
+}
+
+export type WorkOrderPriority = "low" | "normal" | "high" | "critical";
+export type WorkOrderStatus =
+  | "reported"
+  | "triaged"
+  | "approved"
+  | "in_progress"
+  | "waiting_parts"
+  | "completed"
+  | "verified"
+  | "closed"
+  | "cancelled";
+export type WorkOrderCostKind = "part" | "labour" | "other";
+
+export interface WorkOrder {
+  id: string;
+  number: number;
+  vehicle_id: string;
+  source_defect_id: string | null;
+  maintenance_schedule_id: string | null;
+  title: string;
+  description: string;
+  priority: WorkOrderPriority;
+  status: WorkOrderStatus;
+  assigned_mechanic_membership_id: string | null;
+  labour_hours: string;
+  labour_cost: string;
+  parts_cost: string;
+  currency: string;
+  opened_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  closed_at: string | null;
+  version: number;
+  created_by_user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkOrderNote {
+  id: string;
+  author_user_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface WorkOrderCostItem {
+  id: string;
+  kind: WorkOrderCostKind;
+  description: string;
+  quantity: string;
+  unit_cost: string;
+  created_at: string;
+}
+
+export interface WorkOrderDetails extends WorkOrder {
+  notes: WorkOrderNote[];
+  cost_items: WorkOrderCostItem[];
+  total_cost: string;
+}
+
+export interface WorkOrderCreateInput {
+  source_defect_id?: string;
+  maintenance_schedule_id?: string;
+  title: string;
+  description: string;
+  priority: WorkOrderPriority;
+  assigned_mechanic_membership_id?: string;
 }
 
 interface TokenResponse {
@@ -346,6 +425,93 @@ export async function evaluateMaintenanceSchedules(
   return request(
     "/maintenance-schedules/evaluate",
     { method: "POST" },
+    accessToken,
+  );
+}
+
+export async function listMembers(
+  accessToken: string,
+  role: MembershipRole,
+): Promise<Member[]> {
+  const result = await request<{ items: Member[] }>(
+    `/members?role=${role}`,
+    {},
+    accessToken,
+  );
+  return result.items;
+}
+
+export async function listWorkOrders(
+  accessToken: string,
+): Promise<WorkOrder[]> {
+  const result = await request<{ items: WorkOrder[] }>(
+    "/work-orders?limit=50",
+    {},
+    accessToken,
+  );
+  return result.items;
+}
+
+export async function getWorkOrder(
+  accessToken: string,
+  workOrderId: string,
+): Promise<WorkOrderDetails> {
+  return request<WorkOrderDetails>(
+    `/work-orders/${workOrderId}`,
+    {},
+    accessToken,
+  );
+}
+
+export async function createWorkOrder(
+  accessToken: string,
+  input: WorkOrderCreateInput,
+): Promise<WorkOrder> {
+  return request<WorkOrder>(
+    "/work-orders",
+    { method: "POST", body: JSON.stringify(input) },
+    accessToken,
+  );
+}
+
+export async function transitionWorkOrder(
+  accessToken: string,
+  workOrderId: string,
+  input: { version: number; status: WorkOrderStatus; note?: string },
+): Promise<WorkOrder> {
+  return request<WorkOrder>(
+    `/work-orders/${workOrderId}/transitions`,
+    { method: "POST", body: JSON.stringify(input) },
+    accessToken,
+  );
+}
+
+export async function addWorkOrderNote(
+  accessToken: string,
+  workOrderId: string,
+  body: string,
+): Promise<WorkOrderNote> {
+  return request<WorkOrderNote>(
+    `/work-orders/${workOrderId}/notes`,
+    { method: "POST", body: JSON.stringify({ body }) },
+    accessToken,
+  );
+}
+
+export async function addWorkOrderCostItem(
+  accessToken: string,
+  workOrderId: string,
+  input: {
+    version: number;
+    kind: WorkOrderCostKind;
+    description: string;
+    quantity: string;
+    unit_cost: string;
+  },
+): Promise<{ item: WorkOrderCostItem; work_order: WorkOrder }> {
+  return request(
+    `/work-orders/${workOrderId}/cost-items`,
+    { method: "POST", body: JSON.stringify(input) },
     accessToken,
   );
 }

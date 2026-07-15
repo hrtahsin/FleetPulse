@@ -14,6 +14,8 @@ from fleetpulse.defects.models import Defect
 from fleetpulse.defects.types import DefectSeverity, DefectStatus
 from fleetpulse.inspections.models import Inspection, InspectionTemplate
 from fleetpulse.inspections.types import InspectionStatus
+from fleetpulse.maintenance.models import MaintenanceRule, MaintenanceSchedule
+from fleetpulse.maintenance.types import MaintenanceScheduleStatus
 from fleetpulse.notifications.models import Notification
 from fleetpulse.organizations.models import Organization
 from fleetpulse.outbox.models import OutboxEvent
@@ -272,6 +274,100 @@ async def test_stale_assignment_and_tenant_boundaries_are_enforced(
             actor_role=MembershipRole.MECHANIC,
             actor_membership_id=fleet_a.other_mechanic_membership_id,
         )
+
+
+@pytest.mark.asyncio
+async def test_due_schedule_work_order_records_completion_baseline(
+    auth_database: async_sessionmaker[AsyncSession],
+) -> None:
+    fixture = await _create_fixture(auth_database, "fleet-a")
+    rule_id = uuid.uuid4()
+    schedule_id = uuid.uuid4()
+    async with auth_database() as session, session.begin():
+        defect = await session.get(Defect, fixture.defect_id)
+        vehicle = await session.get(Vehicle, fixture.vehicle_id)
+        assert defect is not None and vehicle is not None
+        defect.status = DefectStatus.DISMISSED
+        vehicle.status = VehicleStatus.MAINTENANCE_DUE
+        session.add(
+            MaintenanceRule(
+                id=rule_id,
+                organization_id=fixture.organization_id,
+                name="Engine oil service",
+                vehicle_id=None,
+                interval_km=Decimal("10000.0"),
+                interval_days=180,
+                active=True,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        session.add(
+            MaintenanceSchedule(
+                id=schedule_id,
+                organization_id=fixture.organization_id,
+                vehicle_id=fixture.vehicle_id,
+                maintenance_rule_id=rule_id,
+                due_at=NOW,
+                due_odometer_km=Decimal("42000.0"),
+                status=MaintenanceScheduleStatus.DUE,
+                evaluated_at=NOW,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+
+    service = WorkOrderService(session_factory=auth_database, clock=lambda: NOW)
+    order = await service.create(
+        organization_id=fixture.organization_id,
+        actor_user_id=fixture.owner_user_id,
+        request_id=uuid.uuid4(),
+        data=CreateWorkOrder(
+            source_defect_id=None,
+            maintenance_schedule_id=schedule_id,
+            title="Complete engine oil service",
+            description="Perform scheduled oil and filter service.",
+            priority=WorkOrderPriority.NORMAL,
+            assigned_mechanic_membership_id=fixture.mechanic_membership_id,
+            currency="CAD",
+        ),
+    )
+    for status in (
+        WorkOrderStatus.TRIAGED,
+        WorkOrderStatus.APPROVED,
+        WorkOrderStatus.IN_PROGRESS,
+        WorkOrderStatus.COMPLETED,
+    ):
+        order = await _transition(
+            service,
+            fixture,
+            order,
+            MembershipRole.OWNER,
+            fixture.owner_user_id,
+            fixture.owner_membership_id,
+            status,
+        )
+    order = await _transition(
+        service,
+        fixture,
+        order,
+        MembershipRole.OWNER,
+        fixture.owner_user_id,
+        fixture.owner_membership_id,
+        WorkOrderStatus.VERIFIED,
+        "Service record and return-to-service condition verified.",
+    )
+
+    async with auth_database() as session:
+        schedule = await session.get(MaintenanceSchedule, schedule_id)
+        vehicle = await session.get(Vehicle, fixture.vehicle_id)
+
+    assert order.status == WorkOrderStatus.VERIFIED
+    assert schedule is not None
+    assert schedule.status == MaintenanceScheduleStatus.COMPLETED
+    assert schedule.last_completed_at == NOW
+    assert schedule.last_completed_odometer_km == Decimal("42000.0")
+    assert vehicle is not None and vehicle.status == VehicleStatus.AVAILABLE
 
 
 @pytest.mark.asyncio

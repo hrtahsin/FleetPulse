@@ -194,7 +194,11 @@ export function VehicleWorkspace() {
           <MaintenancePanel session={session} vehicles={vehicles} />
         )}
 
-        <WorkOrderPanel session={session} vehicles={vehicles} />
+        <WorkOrderPanel
+          session={session}
+          vehicles={vehicles}
+          onFleetChanged={() => loadFleet()}
+        />
 
         <section className="fleet-panel">
           <div className="panel-heading">
@@ -976,9 +980,11 @@ const mechanicWorkOrderTransitions: Record<WorkOrderStatus, WorkOrderStatus[]> =
 function WorkOrderPanel({
   session,
   vehicles,
+  onFleetChanged,
 }: {
   session: Session;
   vehicles: Vehicle[];
+  onFleetChanged: () => Promise<void>;
 }) {
   const canManage = canManageVehicles(session.identity.role);
   const [orders, setOrders] = useState<WorkOrder[]>([]);
@@ -1089,6 +1095,7 @@ function WorkOrderPanel({
       });
       setTransitionNote("");
       await refresh(order.id);
+      await onFleetChanged();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {

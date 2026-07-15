@@ -227,6 +227,7 @@ class AuthService:
                     role=data.role,
                 )
                 repository.add_user(user)
+                await session.flush([user])
                 repository.add_membership(membership)
                 session.add(
                     AuditEvent(

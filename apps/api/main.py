@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
+from fleetpulse.audit.api import router as audit_router
 from fleetpulse.auth.api import router as auth_router
+from fleetpulse.dashboard.api import router as dashboard_router
 from fleetpulse.defects.api import router as defect_router
 from fleetpulse.inspections.api import router as inspection_router
 from fleetpulse.maintenance.api import router as maintenance_router
@@ -49,6 +51,8 @@ app.include_router(maintenance_router, prefix="/api/v1")
 app.include_router(defect_router, prefix="/api/v1")
 app.include_router(notification_router, prefix="/api/v1")
 app.include_router(work_order_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
+app.include_router(audit_router, prefix="/api/v1")
 app.include_router(health_router, prefix="/api/v1")
 
 

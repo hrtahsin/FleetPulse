@@ -2,35 +2,48 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  addWorkOrderCostItem,
+  addWorkOrderNote,
   canManageVehicles,
   createMaintenanceRule,
   createVehicle,
+  createWorkOrder,
   Defect,
   DefectSeverity,
   evaluateMaintenanceSchedules,
   FleetApiError,
   getActiveInspectionTemplate,
   getIdentity,
+  getWorkOrder,
   Identity,
   InspectionDetails,
   InspectionTemplate,
   listDefects,
   listMaintenanceRules,
   listMaintenanceSchedules,
+  listMembers,
   listNotifications,
   listVehicles,
+  listWorkOrders,
   login,
   MaintenanceRule,
   MaintenanceSchedule,
+  Member,
   markNotificationRead,
   Notification,
   submitInspection,
+  transitionWorkOrder,
   updateVehicle,
   Vehicle,
   VehicleCreateInput,
   vehicleStatusLabels,
   VehicleStatus,
   vehicleStatuses,
+  WorkOrder,
+  WorkOrderCostKind,
+  WorkOrderDetails,
+  WorkOrderPriority,
+  WorkOrderStatus,
 } from "./lib/fleet-api";
 
 interface Session {
@@ -121,6 +134,9 @@ export function VehicleWorkspace() {
           <a className="nav-item" href="#maintenance">
             <span>◇</span> Maintenance
           </a>
+          <a className="nav-item" href="#work-orders">
+            <span>⚒</span> Work orders
+          </a>
         </nav>
         <div className="tenant-card">
           <span className="tenant-mark">
@@ -177,6 +193,8 @@ export function VehicleWorkspace() {
         {canManage && (
           <MaintenancePanel session={session} vehicles={vehicles} />
         )}
+
+        <WorkOrderPanel session={session} vehicles={vehicles} />
 
         <section className="fleet-panel">
           <div className="panel-heading">
@@ -929,6 +947,527 @@ function MaintenancePanel({
   );
 }
 
+const managerWorkOrderTransitions: Record<WorkOrderStatus, WorkOrderStatus[]> =
+  {
+    reported: ["triaged", "cancelled"],
+    triaged: ["approved", "cancelled"],
+    approved: ["in_progress", "cancelled"],
+    in_progress: ["waiting_parts", "completed", "cancelled"],
+    waiting_parts: ["in_progress", "completed", "cancelled"],
+    completed: ["in_progress", "verified"],
+    verified: ["closed"],
+    closed: [],
+    cancelled: [],
+  };
+
+const mechanicWorkOrderTransitions: Record<WorkOrderStatus, WorkOrderStatus[]> =
+  {
+    reported: [],
+    triaged: [],
+    approved: ["in_progress"],
+    in_progress: ["waiting_parts", "completed"],
+    waiting_parts: ["in_progress", "completed"],
+    completed: [],
+    verified: [],
+    closed: [],
+    cancelled: [],
+  };
+
+function WorkOrderPanel({
+  session,
+  vehicles,
+}: {
+  session: Session;
+  vehicles: Vehicle[];
+}) {
+  const canManage = canManageVehicles(session.identity.role);
+  const [orders, setOrders] = useState<WorkOrder[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [details, setDetails] = useState<WorkOrderDetails | null>(null);
+  const [defects, setDefects] = useState<Defect[]>([]);
+  const [schedules, setSchedules] = useState<MaintenanceSchedule[]>([]);
+  const [mechanics, setMechanics] = useState<Member[]>([]);
+  const [source, setSource] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState<WorkOrderPriority>("normal");
+  const [mechanicId, setMechanicId] = useState("");
+  const [transitionNote, setTransitionNote] = useState("");
+  const [repairNote, setRepairNote] = useState("");
+  const [costKind, setCostKind] = useState<WorkOrderCostKind>("labour");
+  const [costDescription, setCostDescription] = useState("");
+  const [costQuantity, setCostQuantity] = useState("1.00");
+  const [costUnit, setCostUnit] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(
+    async (preferredId?: string) => {
+      setError(null);
+      try {
+        const nextOrders = await listWorkOrders(session.accessToken);
+        setOrders(nextOrders);
+        if (canManage) {
+          const [nextDefects, nextSchedules, nextMechanics] = await Promise.all(
+            [
+              listDefects(session.accessToken),
+              listMaintenanceSchedules(session.accessToken),
+              listMembers(session.accessToken, "mechanic"),
+            ],
+          );
+          setDefects(nextDefects);
+          setSchedules(nextSchedules);
+          setMechanics(nextMechanics.filter((member) => member.is_active));
+        }
+        const targetId =
+          preferredId ??
+          (selectedId && nextOrders.some((order) => order.id === selectedId)
+            ? selectedId
+            : nextOrders[0]?.id);
+        setSelectedId(targetId ?? null);
+        setDetails(
+          targetId ? await getWorkOrder(session.accessToken, targetId) : null,
+        );
+      } catch (caught) {
+        setError(errorMessage(caught));
+      }
+    },
+    [canManage, selectedId, session.accessToken],
+  );
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function selectOrder(orderId: string) {
+    setSelectedId(orderId);
+    setError(null);
+    try {
+      setDetails(await getWorkOrder(session.accessToken, orderId));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const [sourceType, sourceId] = source.split(":", 2);
+    setBusy(true);
+    setError(null);
+    try {
+      const order = await createWorkOrder(session.accessToken, {
+        ...(sourceType === "defect"
+          ? { source_defect_id: sourceId }
+          : { maintenance_schedule_id: sourceId }),
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        assigned_mechanic_membership_id: mechanicId || undefined,
+      });
+      setSource("");
+      setTitle("");
+      setDescription("");
+      setPriority("normal");
+      setMechanicId("");
+      await refresh(order.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function transition(status: WorkOrderStatus) {
+    if (!details) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const order = await transitionWorkOrder(session.accessToken, details.id, {
+        version: details.version,
+        status,
+        note: transitionNote.trim() || undefined,
+      });
+      setTransitionNote("");
+      await refresh(order.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!details) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addWorkOrderNote(
+        session.accessToken,
+        details.id,
+        repairNote.trim(),
+      );
+      setRepairNote("");
+      await refresh(details.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addCost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!details) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await addWorkOrderCostItem(session.accessToken, details.id, {
+        version: details.version,
+        kind: costKind,
+        description: costDescription.trim(),
+        quantity: costQuantity,
+        unit_cost: costUnit,
+      });
+      setCostDescription("");
+      setCostQuantity("1.00");
+      setCostUnit("");
+      await refresh(details.id);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const vehicleLabels = new Map(
+    vehicles.map((vehicle) => [vehicle.id, vehicle.unit_number]),
+  );
+  const usedDefects = new Set(
+    orders.flatMap((order) =>
+      order.source_defect_id ? [order.source_defect_id] : [],
+    ),
+  );
+  const usedSchedules = new Set(
+    orders.flatMap((order) =>
+      order.maintenance_schedule_id ? [order.maintenance_schedule_id] : [],
+    ),
+  );
+  const sourceOptions = [
+    ...defects
+      .filter((defect) => !usedDefects.has(defect.id))
+      .map((defect) => ({
+        value: `defect:${defect.id}`,
+        label: `${defect.severity.toUpperCase()} defect · ${defect.description}`,
+      })),
+    ...schedules
+      .filter(
+        (schedule) =>
+          ["due", "overdue"].includes(schedule.status) &&
+          !usedSchedules.has(schedule.id),
+      )
+      .map((schedule) => ({
+        value: `schedule:${schedule.id}`,
+        label: `${schedule.status.toUpperCase()} service · ${vehicleLabels.get(schedule.vehicle_id) ?? "Vehicle"}`,
+      })),
+  ];
+  const transitions = details
+    ? canManage
+      ? managerWorkOrderTransitions[details.status]
+      : mechanicWorkOrderTransitions[details.status]
+    : [];
+  const acceptsRepairEntries =
+    details &&
+    !["completed", "verified", "closed", "cancelled"].includes(details.status);
+  const openCount = orders.filter(
+    (order) => !["closed", "cancelled"].includes(order.status),
+  ).length;
+
+  return (
+    <section className="work-order-panel" id="work-orders">
+      <div className="work-order-heading">
+        <div>
+          <p className="section-kicker">Repair execution</p>
+          <h2>{canManage ? "Work-order control" : "My assigned work"}</h2>
+          <p>Versioned repair records from source issue to verified closure.</p>
+        </div>
+        <span className="work-order-count">{openCount} open</span>
+      </div>
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
+        </div>
+      )}
+
+      {canManage && (
+        <form className="work-order-create" onSubmit={create}>
+          <label>
+            Source record
+            <select
+              required
+              value={source}
+              onChange={(event) => setSource(event.target.value)}
+            >
+              <option value="">Select an open defect or due service</option>
+              {sourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Title
+            <input
+              required
+              maxLength={180}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Repair brake warning"
+            />
+          </label>
+          <label>
+            Priority
+            <select
+              value={priority}
+              onChange={(event) =>
+                setPriority(event.target.value as WorkOrderPriority)
+              }
+            >
+              {(["low", "normal", "high", "critical"] as const).map((value) => (
+                <option key={value} value={value}>
+                  {titleCase(value)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Assign mechanic
+            <select
+              required
+              value={mechanicId}
+              onChange={(event) => setMechanicId(event.target.value)}
+            >
+              <option value="">Choose a mechanic</option>
+              {mechanics.map((mechanic) => (
+                <option
+                  key={mechanic.membership_id}
+                  value={mechanic.membership_id}
+                >
+                  {mechanic.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="work-order-description">
+            Work description
+            <textarea
+              required
+              maxLength={5000}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Describe the diagnosis and expected repair."
+            />
+          </label>
+          <button className="primary-button" disabled={busy || !source}>
+            {busy ? "Creating…" : "Create work order"}
+          </button>
+        </form>
+      )}
+
+      <div className="work-order-grid">
+        <div className="work-order-list">
+          {orders.map((order) => (
+            <button
+              type="button"
+              key={order.id}
+              className={`work-order-card ${selectedId === order.id ? "selected" : ""}`}
+              onClick={() => void selectOrder(order.id)}
+            >
+              <span className={`priority-dot priority-${order.priority}`} />
+              <div>
+                <strong>
+                  #{order.number} · {order.title}
+                </strong>
+                <small>
+                  {vehicleLabels.get(order.vehicle_id) ?? "Vehicle"} · Version{" "}
+                  {order.version}
+                </small>
+              </div>
+              <span className={`work-state state-${order.status}`}>
+                {titleCase(order.status)}
+              </span>
+            </button>
+          ))}
+          {orders.length === 0 && (
+            <div className="compact-empty">
+              {canManage
+                ? "No work orders yet. Select a source record above."
+                : "No work orders are assigned to you."}
+            </div>
+          )}
+        </div>
+
+        <div className="work-order-detail">
+          {details ? (
+            <>
+              <div className="work-order-detail-heading">
+                <div>
+                  <small>Work order #{details.number}</small>
+                  <h3>{details.title}</h3>
+                  <p>{details.description}</p>
+                </div>
+                <span className={`work-state state-${details.status}`}>
+                  {titleCase(details.status)}
+                </span>
+              </div>
+              <div className="repair-totals">
+                <span>
+                  <strong>{details.labour_hours}</strong> labour hours
+                </span>
+                <span>
+                  <strong>
+                    {formatMoney(details.labour_cost, details.currency)}
+                  </strong>{" "}
+                  labour
+                </span>
+                <span>
+                  <strong>
+                    {formatMoney(details.parts_cost, details.currency)}
+                  </strong>{" "}
+                  parts
+                </span>
+                <span>
+                  <strong>
+                    {formatMoney(details.total_cost, details.currency)}
+                  </strong>{" "}
+                  total
+                </span>
+              </div>
+
+              {transitions.length > 0 && (
+                <div className="transition-box">
+                  <label>
+                    Transition note
+                    <input
+                      value={transitionNote}
+                      onChange={(event) =>
+                        setTransitionNote(event.target.value)
+                      }
+                      placeholder="Required when verifying a repair"
+                    />
+                  </label>
+                  <div>
+                    {transitions.map((status) => (
+                      <button
+                        type="button"
+                        className={
+                          status === "verified"
+                            ? "primary-button"
+                            : "secondary-button"
+                        }
+                        disabled={
+                          busy ||
+                          (status === "verified" && !transitionNote.trim())
+                        }
+                        key={status}
+                        onClick={() => void transition(status)}
+                      >
+                        {titleCase(status)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {acceptsRepairEntries && (
+                <div className="repair-entry-grid">
+                  <form onSubmit={addNote}>
+                    <h4>Repair note</h4>
+                    <textarea
+                      required
+                      value={repairNote}
+                      onChange={(event) => setRepairNote(event.target.value)}
+                      placeholder="Diagnosis, repair, or test result"
+                    />
+                    <button className="secondary-button" disabled={busy}>
+                      Add note
+                    </button>
+                  </form>
+                  <form onSubmit={addCost}>
+                    <h4>Labour or part</h4>
+                    <select
+                      value={costKind}
+                      onChange={(event) =>
+                        setCostKind(event.target.value as WorkOrderCostKind)
+                      }
+                    >
+                      <option value="labour">Labour</option>
+                      <option value="part">Part</option>
+                      <option value="other">Other</option>
+                    </select>
+                    <input
+                      required
+                      value={costDescription}
+                      onChange={(event) =>
+                        setCostDescription(event.target.value)
+                      }
+                      placeholder="Description"
+                    />
+                    <div>
+                      <input
+                        required
+                        min="0.01"
+                        step="0.01"
+                        type="number"
+                        value={costQuantity}
+                        onChange={(event) =>
+                          setCostQuantity(event.target.value)
+                        }
+                        aria-label="Cost quantity"
+                      />
+                      <input
+                        required
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        value={costUnit}
+                        onChange={(event) => setCostUnit(event.target.value)}
+                        placeholder="Unit cost"
+                        aria-label="Unit cost"
+                      />
+                    </div>
+                    <button className="secondary-button" disabled={busy}>
+                      Add cost item
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              <div className="repair-history">
+                <h4>Repair record</h4>
+                {[...details.notes].reverse().map((note) => (
+                  <article key={note.id}>
+                    <p>{note.body}</p>
+                    <small>{new Date(note.created_at).toLocaleString()}</small>
+                  </article>
+                ))}
+                {details.notes.length === 0 && (
+                  <div className="compact-empty">No repair notes recorded.</div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="compact-empty">
+              Select a work order to review it.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function SafetyPanel({ session }: { session: Session }) {
   const [defects, setDefects] = useState<Defect[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -1445,6 +1984,12 @@ function formatOdometer(value: string): string {
   return new Intl.NumberFormat("en-CA", { maximumFractionDigits: 1 }).format(
     Number(value),
   );
+}
+function formatMoney(value: string, currency: string): string {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency,
+  }).format(Number(value));
 }
 function relativeTime(value: string): string {
   const minutes = Math.max(

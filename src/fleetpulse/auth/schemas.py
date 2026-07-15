@@ -54,3 +54,16 @@ class MemberResponse(BaseModel):
 
 class MemberListResponse(BaseModel):
     items: list[MemberResponse]
+
+
+class MemberCreateRequest(BaseModel):
+    email: EmailStr
+    display_name: str = Field(min_length=2, max_length=120)
+    role: MembershipRole
+    temporary_password: str = Field(min_length=12, max_length=256)
+
+
+class MemberUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=2, max_length=120)
+    role: MembershipRole | None = None
+    is_active: bool | None = None

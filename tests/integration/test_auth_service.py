@@ -5,11 +5,18 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fleetpulse.auth.exceptions import AuthenticationError, TokenReuseError
+from fleetpulse.audit.models import AuditEvent
+from fleetpulse.auth.exceptions import (
+    AuthenticationError,
+    LastOwnerError,
+    MemberNotFoundError,
+    MemberPermissionError,
+    TokenReuseError,
+)
 from fleetpulse.auth.models import OrganizationMembership, RefreshToken, User
 from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.security import PasswordSecurity
-from fleetpulse.auth.service import AuthService
+from fleetpulse.auth.service import AuthService, CreateMember, UpdateMember
 from fleetpulse.organizations.models import Organization
 from fleetpulse.shared.config import Settings
 
@@ -63,6 +70,93 @@ async def test_bad_password_and_logout_are_safe(
         await service.refresh(tokens.refresh_token, None)
 
 
+@pytest.mark.asyncio
+async def test_manager_creates_and_deactivates_operational_member(
+    auth_database: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, manager_id, _ = await _create_identity(auth_database)
+    service = _service(auth_database)
+    created = await service.create_member(
+        organization_id=organization_id,
+        actor_user_id=manager_id,
+        actor_role=MembershipRole.MANAGER,
+        request_id=uuid.uuid4(),
+        data=CreateMember(
+            email="driver@example.com",
+            display_name="Integration Driver",
+            role=MembershipRole.DRIVER,
+            temporary_password="temporary-driver-password",
+        ),
+    )
+    tokens = await service.login("driver@example.com", "temporary-driver-password", None)
+
+    updated = await service.update_member(
+        organization_id=organization_id,
+        actor_user_id=manager_id,
+        actor_role=MembershipRole.MANAGER,
+        membership_id=created.membership.id,
+        request_id=uuid.uuid4(),
+        data=UpdateMember(is_active=False),
+    )
+
+    assert updated.user.is_active is False
+    with pytest.raises(AuthenticationError):
+        await service.current_identity(tokens.access_token)
+    with pytest.raises(AuthenticationError):
+        await service.refresh(tokens.refresh_token, None)
+    async with auth_database() as session:
+        audit_actions = list(await session.scalars(select(AuditEvent.action)))
+    assert audit_actions == ["membership.created", "membership.updated"]
+
+
+@pytest.mark.asyncio
+async def test_member_management_enforces_roles_tenant_and_last_owner(
+    auth_database: async_sessionmaker[AsyncSession],
+) -> None:
+    organization_id, owner_id, owner_membership_id = await _create_identity(
+        auth_database, role=MembershipRole.OWNER
+    )
+    other_organization_id, _, _ = await _create_identity(
+        auth_database,
+        role=MembershipRole.MANAGER,
+        slug="other-fleet",
+        email="other-manager@example.com",
+    )
+    service = _service(auth_database)
+
+    with pytest.raises(MemberPermissionError):
+        await service.create_member(
+            organization_id=organization_id,
+            actor_user_id=uuid.uuid4(),
+            actor_role=MembershipRole.MANAGER,
+            request_id=uuid.uuid4(),
+            data=CreateMember(
+                email="second-manager@example.com",
+                display_name="Second Manager",
+                role=MembershipRole.MANAGER,
+                temporary_password="temporary-manager-password",
+            ),
+        )
+    with pytest.raises(MemberNotFoundError):
+        await service.update_member(
+            organization_id=other_organization_id,
+            actor_user_id=owner_id,
+            actor_role=MembershipRole.OWNER,
+            membership_id=owner_membership_id,
+            request_id=uuid.uuid4(),
+            data=UpdateMember(display_name="Cross tenant"),
+        )
+    with pytest.raises(LastOwnerError):
+        await service.update_member(
+            organization_id=organization_id,
+            actor_user_id=uuid.uuid4(),
+            actor_role=MembershipRole.OWNER,
+            membership_id=owner_membership_id,
+            request_id=uuid.uuid4(),
+            data=UpdateMember(role=MembershipRole.MANAGER),
+        )
+
+
 def _service(factory: async_sessionmaker[AsyncSession]) -> AuthService:
     return AuthService(
         session_factory=factory,
@@ -74,16 +168,23 @@ def _service(factory: async_sessionmaker[AsyncSession]) -> AuthService:
     )
 
 
-async def _create_identity(factory: async_sessionmaker[AsyncSession]) -> None:
+async def _create_identity(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    role: MembershipRole = MembershipRole.MANAGER,
+    slug: str = "integration-fleet",
+    email: str = "manager@example.com",
+) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     password_security = PasswordSecurity()
     organization_id = uuid.uuid4()
     user_id = uuid.uuid4()
+    membership_id = uuid.uuid4()
     async with factory() as session, session.begin():
         session.add(
             Organization(
                 id=organization_id,
                 name="Integration Fleet",
-                slug="integration-fleet",
+                slug=slug,
                 timezone="UTC",
                 default_currency="CAD",
             )
@@ -91,7 +192,7 @@ async def _create_identity(factory: async_sessionmaker[AsyncSession]) -> None:
         session.add(
             User(
                 id=user_id,
-                email="manager@example.com",
+                email=email,
                 password_hash=password_security.hash("valid-demo-password"),
                 display_name="Integration Manager",
                 is_active=True,
@@ -100,9 +201,10 @@ async def _create_identity(factory: async_sessionmaker[AsyncSession]) -> None:
         await session.flush()
         session.add(
             OrganizationMembership(
-                id=uuid.uuid4(),
+                id=membership_id,
                 organization_id=organization_id,
                 user_id=user_id,
-                role=MembershipRole.MANAGER,
+                role=role,
             )
         )
+    return organization_id, user_id, membership_id

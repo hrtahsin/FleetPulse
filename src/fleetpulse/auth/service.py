@@ -3,10 +3,19 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fleetpulse.auth.exceptions import AuthenticationError, TokenReuseError
-from fleetpulse.auth.models import RefreshToken
+from fleetpulse.audit.models import AuditEvent
+from fleetpulse.auth.exceptions import (
+    AuthenticationError,
+    LastOwnerError,
+    MemberAlreadyExistsError,
+    MemberNotFoundError,
+    MemberPermissionError,
+    TokenReuseError,
+)
+from fleetpulse.auth.models import OrganizationMembership, RefreshToken, User
 from fleetpulse.auth.repository import AuthRepository, IdentityRecord, MemberRecord
 from fleetpulse.auth.roles import MembershipRole
 from fleetpulse.auth.security import (
@@ -39,6 +48,21 @@ class CurrentIdentity:
     organization_timezone: str
     default_currency: str
     role: MembershipRole
+
+
+@dataclass(frozen=True, slots=True)
+class CreateMember:
+    email: str
+    display_name: str
+    role: MembershipRole
+    temporary_password: str
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateMember:
+    display_name: str | None = None
+    role: MembershipRole | None = None
+    is_active: bool | None = None
 
 
 class AuthService:
@@ -172,6 +196,138 @@ class AuthService:
     ) -> list[MemberRecord]:
         async with self._session_factory() as session:
             return await AuthRepository(session).list_members(organization_id, role)
+
+    async def create_member(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        actor_role: MembershipRole,
+        request_id: uuid.UUID,
+        data: CreateMember,
+    ) -> MemberRecord:
+        self._require_role_management(actor_role, None, data.role)
+        normalized_email = data.email.strip().lower()
+        try:
+            async with self._session_factory() as session, session.begin():
+                repository = AuthRepository(session)
+                if await repository.get_user_by_email(normalized_email) is not None:
+                    raise MemberAlreadyExistsError
+                user = User(
+                    id=uuid.uuid4(),
+                    email=normalized_email,
+                    display_name=data.display_name.strip(),
+                    password_hash=self._passwords.hash(data.temporary_password),
+                    is_active=True,
+                )
+                membership = OrganizationMembership(
+                    id=uuid.uuid4(),
+                    organization_id=organization_id,
+                    user_id=user.id,
+                    role=data.role,
+                )
+                repository.add_user(user)
+                repository.add_membership(membership)
+                session.add(
+                    AuditEvent(
+                        id=uuid.uuid4(),
+                        organization_id=organization_id,
+                        actor_user_id=actor_user_id,
+                        action="membership.created",
+                        entity_type="membership",
+                        entity_id=membership.id,
+                        after_data={
+                            "user_id": str(user.id),
+                            "email": normalized_email,
+                            "display_name": user.display_name,
+                            "role": data.role.value,
+                            "is_active": True,
+                        },
+                        request_id=request_id,
+                    )
+                )
+                await session.flush()
+                return MemberRecord(membership=membership, user=user)
+        except IntegrityError as exc:
+            raise MemberAlreadyExistsError from exc
+
+    async def update_member(
+        self,
+        *,
+        organization_id: uuid.UUID,
+        actor_user_id: uuid.UUID,
+        actor_role: MembershipRole,
+        membership_id: uuid.UUID,
+        request_id: uuid.UUID,
+        data: UpdateMember,
+    ) -> MemberRecord:
+        now = self._clock()
+        async with self._session_factory() as session, session.begin():
+            repository = AuthRepository(session)
+            record = await repository.get_member_for_update(organization_id, membership_id)
+            if record is None:
+                raise MemberNotFoundError
+            current_role = MembershipRole(record.membership.role)
+            next_role = data.role or current_role
+            self._require_role_management(actor_role, current_role, next_role)
+            if record.user.id == actor_user_id and (
+                next_role is not current_role or data.is_active is False
+            ):
+                raise MemberPermissionError
+            next_active = record.user.is_active if data.is_active is None else data.is_active
+            if (
+                current_role is MembershipRole.OWNER
+                and (next_role is not MembershipRole.OWNER or not next_active)
+                and await repository.active_owner_count(organization_id) <= 1
+            ):
+                raise LastOwnerError
+
+            before = {
+                "display_name": record.user.display_name,
+                "role": current_role.value,
+                "is_active": record.user.is_active,
+            }
+            if data.display_name is not None:
+                record.user.display_name = data.display_name.strip()
+            record.membership.role = next_role
+            record.user.is_active = next_active
+            if not next_active:
+                await repository.revoke_user_tokens(record.user.id, now)
+            after = {
+                "display_name": record.user.display_name,
+                "role": next_role.value,
+                "is_active": next_active,
+            }
+            session.add(
+                AuditEvent(
+                    id=uuid.uuid4(),
+                    organization_id=organization_id,
+                    actor_user_id=actor_user_id,
+                    action="membership.updated",
+                    entity_type="membership",
+                    entity_id=record.membership.id,
+                    before_data=before,
+                    after_data=after,
+                    request_id=request_id,
+                )
+            )
+            return record
+
+    @staticmethod
+    def _require_role_management(
+        actor_role: MembershipRole,
+        current_role: MembershipRole | None,
+        next_role: MembershipRole,
+    ) -> None:
+        if actor_role is MembershipRole.OWNER:
+            return
+        manager_roles = {MembershipRole.DRIVER, MembershipRole.MECHANIC}
+        if (
+            actor_role is not MembershipRole.MANAGER
+            or next_role not in manager_roles
+            or (current_role is not None and current_role not in manager_roles)
+        ):
+            raise MemberPermissionError
 
     def _new_refresh_token(
         self,

@@ -14,6 +14,7 @@ import fleetpulse.notifications.models  # noqa: F401
 import fleetpulse.organizations.models  # noqa: F401
 import fleetpulse.outbox.models  # noqa: F401
 import fleetpulse.vehicles.models  # noqa: F401
+import fleetpulse.work_orders.models  # noqa: F401
 from fleetpulse.shared.config import get_settings
 from fleetpulse.shared.models import Base
 

@@ -5,7 +5,9 @@ vehicle inspections, defect handling, preventive-maintenance scheduling, and rep
 application includes organization-scoped authentication, rotating refresh tokens, fixed role-based
 permissions, tenant-isolated vehicle management with immutable status history, an atomic critical
 defect safety loop, date/odometer maintenance evaluation, and a versioned work-order lifecycle
-with mechanic assignment, notes, cost totals, and manager verification.
+with mechanic assignment, notes, cost totals, and manager verification. Owners and managers also
+receive a live operations dashboard, tenant member administration, a queryable audit timeline,
+defect triage controls, and scoped notification management.
 
 ## Prerequisites
 
@@ -46,6 +48,7 @@ API behavior is documented in:
 - `docs/api/inspections.md`
 - `docs/api/maintenance.md`
 - `docs/api/work-orders.md`
+- `docs/api/operations.md`
 
 ## Development checks
 

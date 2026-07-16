@@ -324,9 +324,7 @@ async def test_manager_safety_controls_dashboard_and_audit_are_tenant_isolated(
         actor_user_id=None,
         limit=50,
     )
-    assert [record.event.action for record in fleet_a_events].count(
-        "defect.status_changed"
-    ) == 2
+    assert [record.event.action for record in fleet_a_events].count("defect.status_changed") == 2
     assert fleet_b_events == []
 
     with pytest.raises(DefectNotFoundError):

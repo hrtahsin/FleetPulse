@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fleetpulse.auth.models import OrganizationMembership, RefreshToken, User
@@ -63,6 +63,55 @@ class AuthRepository:
             statement = statement.where(OrganizationMembership.role == role)
         rows = (await self._session.execute(statement)).all()
         return [MemberRecord(membership=row[0], user=row[1]) for row in rows]
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        return cast(
+            User | None, await self._session.scalar(select(User).where(User.email == email))
+        )
+
+    async def get_member_for_update(
+        self, organization_id: UUID, membership_id: UUID
+    ) -> MemberRecord | None:
+        statement = (
+            select(OrganizationMembership, User)
+            .join(User, User.id == OrganizationMembership.user_id)
+            .where(
+                OrganizationMembership.organization_id == organization_id,
+                OrganizationMembership.id == membership_id,
+            )
+            .with_for_update()
+        )
+        row = (await self._session.execute(statement)).one_or_none()
+        if row is None:
+            return None
+        return MemberRecord(membership=row[0], user=row[1])
+
+    async def active_owner_count(self, organization_id: UUID) -> int:
+        return int(
+            await self._session.scalar(
+                select(func.count(OrganizationMembership.id))
+                .join(User, User.id == OrganizationMembership.user_id)
+                .where(
+                    OrganizationMembership.organization_id == organization_id,
+                    OrganizationMembership.role == MembershipRole.OWNER,
+                    User.is_active.is_(True),
+                )
+            )
+            or 0
+        )
+
+    def add_user(self, user: User) -> None:
+        self._session.add(user)
+
+    def add_membership(self, membership: OrganizationMembership) -> None:
+        self._session.add(membership)
+
+    async def revoke_user_tokens(self, user_id: UUID, revoked_at: datetime) -> None:
+        await self._session.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=revoked_at)
+        )
 
     async def get_refresh_token_for_update(self, token_hash: str) -> RefreshToken | None:
         statement = (

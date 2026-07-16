@@ -3,15 +3,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   addWorkOrderCostItem,
   canManageVehicles,
+  createMember,
   createVehicle,
   FleetApiError,
   evaluateMaintenanceSchedules,
+  getDashboardSummary,
+  listAuditEvents,
   listDefects,
   listMaintenanceRules,
   listVehicles,
   listWorkOrders,
+  markAllNotificationsRead,
   submitInspection,
   transitionWorkOrder,
+  updateDefect,
+  updateMember,
   vehicleStatusLabels,
 } from "./fleet-api";
 
@@ -126,11 +132,49 @@ describe("fleet API client", () => {
     await listDefects("manager-token");
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/defects?status=open&limit=50");
+    expect(url).toContain("/defects?limit=50&status=open");
     expect(url).not.toContain("organization");
     expect(new Headers(init.headers).get("Authorization")).toBe(
       "Bearer manager-token",
     );
+  });
+
+  it("uses tenant-derived dashboard, audit, safety, and member administration routes", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ generated_at: "2026-07-14T12:00:00Z" }))
+      .mockResolvedValueOnce(response({ items: [] }))
+      .mockResolvedValueOnce(response({ id: "defect-1", status: "triaged" }))
+      .mockResolvedValueOnce(response({ updated: 4 }))
+      .mockResolvedValueOnce(response({ membership_id: "member-1" }))
+      .mockResolvedValueOnce(response({ membership_id: "member-1", is_active: false }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getDashboardSummary("manager-token");
+    await listAuditEvents("manager-token", { entityType: "defect", limit: 30 });
+    await updateDefect("manager-token", "defect-1", {
+      status: "triaged",
+      resolution_note: "Reviewed",
+    });
+    await markAllNotificationsRead("manager-token");
+    await createMember("manager-token", {
+      email: "driver@example.com",
+      display_name: "Demo Driver",
+      role: "driver",
+      temporary_password: "temporary-passphrase",
+    });
+    await updateMember("manager-token", "member-1", { is_active: false });
+
+    const calls = fetchMock.mock.calls as [string, RequestInit][];
+    expect(calls[0][0]).toContain("/dashboard/summary");
+    expect(calls[1][0]).toContain("/audit-events?limit=30&entity_type=defect");
+    expect(calls[2][0]).toContain("/defects/defect-1");
+    expect(calls[2][1].method).toBe("PATCH");
+    expect(calls[3][0]).toContain("/notifications/read-all");
+    expect(calls[4][0]).toContain("/members");
+    expect(calls[4][1].method).toBe("POST");
+    expect(calls[5][0]).toContain("/members/member-1");
+    expect(calls.every(([url]) => !url.includes("organization"))).toBe(true);
   });
 
   it("loads maintenance rules and triggers tenant-neutral evaluation", async () => {

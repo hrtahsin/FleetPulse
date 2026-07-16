@@ -20,3 +20,7 @@ class NotificationResponse(BaseModel):
 class NotificationListResponse(BaseModel):
     items: list[NotificationResponse]
     unread_count: int
+
+
+class NotificationReadAllResponse(BaseModel):
+    updated: int

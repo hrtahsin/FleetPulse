@@ -121,7 +121,11 @@ export interface Defect {
   description: string;
   severity: DefectSeverity;
   status: DefectStatus;
+  reported_by_user_id: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Notification {
@@ -177,6 +181,69 @@ export interface Member {
   display_name: string;
   role: MembershipRole;
   is_active: boolean;
+}
+
+export interface MemberCreateInput {
+  email: string;
+  display_name: string;
+  role: MembershipRole;
+  temporary_password: string;
+}
+
+export interface MemberUpdateInput {
+  display_name?: string;
+  role?: MembershipRole;
+  is_active?: boolean;
+}
+
+export interface DashboardSummary {
+  generated_at: string;
+  currency: string;
+  vehicles: {
+    total: number;
+    operational: number;
+    unavailable: number;
+    available: number;
+    in_service: number;
+    maintenance_due: number;
+    under_repair: number;
+    out_of_service: number;
+    retired: number;
+  };
+  defects: {
+    active: number;
+    critical: number;
+    triaged: number;
+    in_repair: number;
+  };
+  maintenance: {
+    upcoming: number;
+    due: number;
+    overdue: number;
+  };
+  work_orders: {
+    active: number;
+    unassigned: number;
+    waiting_parts: number;
+    awaiting_verification: number;
+    repair_cost_30_days: string;
+  };
+}
+
+export interface AuditEvent {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  actor: {
+    id: string;
+    display_name: string;
+    email: string;
+  } | null;
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+  request_id: string | null;
+  created_at: string;
 }
 
 export type WorkOrderPriority = "low" | "normal" | "high" | "critical";
@@ -356,13 +423,30 @@ export async function submitInspection(
   );
 }
 
-export async function listDefects(accessToken: string): Promise<Defect[]> {
+export async function listDefects(
+  accessToken: string,
+  filters: { status?: DefectStatus; limit?: number } = { status: "open" },
+): Promise<Defect[]> {
+  const params = new URLSearchParams({ limit: String(filters.limit ?? 50) });
+  if (filters.status) params.set("status", filters.status);
   const result = await request<{ items: Defect[] }>(
-    "/defects?status=open&limit=50",
+    `/defects?${params.toString()}`,
     {},
     accessToken,
   );
   return result.items;
+}
+
+export async function updateDefect(
+  accessToken: string,
+  defectId: string,
+  input: { status: DefectStatus; resolution_note?: string },
+): Promise<Defect> {
+  return request<Defect>(
+    `/defects/${defectId}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+    accessToken,
+  );
 }
 
 export async function listNotifications(
@@ -381,6 +465,16 @@ export async function markNotificationRead(
 ): Promise<Notification> {
   return request<Notification>(
     `/notifications/${notificationId}/read`,
+    { method: "POST" },
+    accessToken,
+  );
+}
+
+export async function markAllNotificationsRead(
+  accessToken: string,
+): Promise<{ updated: number }> {
+  return request<{ updated: number }>(
+    "/notifications/read-all",
     { method: "POST" },
     accessToken,
   );
@@ -431,10 +525,55 @@ export async function evaluateMaintenanceSchedules(
 
 export async function listMembers(
   accessToken: string,
-  role: MembershipRole,
+  role?: MembershipRole,
 ): Promise<Member[]> {
+  const path = role ? `/members?role=${role}` : "/members";
   const result = await request<{ items: Member[] }>(
-    `/members?role=${role}`,
+    path,
+    {},
+    accessToken,
+  );
+  return result.items;
+}
+
+export async function createMember(
+  accessToken: string,
+  input: MemberCreateInput,
+): Promise<Member> {
+  return request<Member>(
+    "/members",
+    { method: "POST", body: JSON.stringify(input) },
+    accessToken,
+  );
+}
+
+export async function updateMember(
+  accessToken: string,
+  membershipId: string,
+  input: MemberUpdateInput,
+): Promise<Member> {
+  return request<Member>(
+    `/members/${membershipId}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+    accessToken,
+  );
+}
+
+export async function getDashboardSummary(
+  accessToken: string,
+): Promise<DashboardSummary> {
+  return request<DashboardSummary>("/dashboard/summary", {}, accessToken);
+}
+
+export async function listAuditEvents(
+  accessToken: string,
+  filters: { entityType?: string; action?: string; limit?: number } = {},
+): Promise<AuditEvent[]> {
+  const params = new URLSearchParams({ limit: String(filters.limit ?? 50) });
+  if (filters.entityType) params.set("entity_type", filters.entityType);
+  if (filters.action) params.set("action", filters.action);
+  const result = await request<{ items: AuditEvent[] }>(
+    `/audit-events?${params.toString()}`,
     {},
     accessToken,
   );

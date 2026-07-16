@@ -7,7 +7,11 @@ from fastapi import APIRouter, Depends, Query, status
 from fleetpulse.auth.dependencies import get_current_identity
 from fleetpulse.auth.service import CurrentIdentity
 from fleetpulse.notifications.exceptions import NotificationNotFoundError
-from fleetpulse.notifications.schemas import NotificationListResponse, NotificationResponse
+from fleetpulse.notifications.schemas import (
+    NotificationListResponse,
+    NotificationReadAllResponse,
+    NotificationResponse,
+)
 from fleetpulse.notifications.service import NotificationService
 from fleetpulse.shared.errors import APIError
 
@@ -34,7 +38,23 @@ async def list_notifications(
     )
     return NotificationListResponse(
         items=[NotificationResponse.model_validate(record) for record in records],
-        unread_count=sum(record.read_at is None for record in records),
+        unread_count=await service.unread_count(
+            organization_id=identity.organization_id,
+            recipient_user_id=identity.user_id,
+        ),
+    )
+
+
+@router.post("/read-all", response_model=NotificationReadAllResponse)
+async def mark_all_notifications_read(
+    identity: Annotated[CurrentIdentity, Depends(get_current_identity)],
+    service: Annotated[NotificationService, Depends(get_notification_service)],
+) -> NotificationReadAllResponse:
+    return NotificationReadAllResponse(
+        updated=await service.mark_all_read(
+            organization_id=identity.organization_id,
+            recipient_user_id=identity.user_id,
+        )
     )
 
 

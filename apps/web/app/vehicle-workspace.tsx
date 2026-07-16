@@ -4,20 +4,25 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   addWorkOrderCostItem,
   addWorkOrderNote,
+  AuditEvent,
   canManageVehicles,
+  createMember,
   createMaintenanceRule,
   createVehicle,
   createWorkOrder,
+  DashboardSummary,
   Defect,
   DefectSeverity,
   evaluateMaintenanceSchedules,
   FleetApiError,
   getActiveInspectionTemplate,
+  getDashboardSummary,
   getIdentity,
   getWorkOrder,
   Identity,
   InspectionDetails,
   InspectionTemplate,
+  listAuditEvents,
   listDefects,
   listMaintenanceRules,
   listMaintenanceSchedules,
@@ -29,10 +34,13 @@ import {
   MaintenanceRule,
   MaintenanceSchedule,
   Member,
+  markAllNotificationsRead,
   markNotificationRead,
   Notification,
   submitInspection,
   transitionWorkOrder,
+  updateDefect,
+  updateMember,
   updateVehicle,
   Vehicle,
   VehicleCreateInput,
@@ -128,6 +136,11 @@ export function VehicleWorkspace() {
           <a className="nav-item active" href="#fleet">
             <span>▦</span> Fleet overview
           </a>
+          {canManage && (
+            <a className="nav-item" href="#dashboard">
+              <span>⌁</span> Command dashboard
+            </a>
+          )}
           <a className="nav-item" href="#safety">
             <span>✓</span> Safety loop
           </a>
@@ -137,6 +150,11 @@ export function VehicleWorkspace() {
           <a className="nav-item" href="#work-orders">
             <span>⚒</span> Work orders
           </a>
+          {canManage && (
+            <a className="nav-item" href="#operations">
+              <span>◎</span> Audit &amp; team
+            </a>
+          )}
         </nav>
         <div className="tenant-card">
           <span className="tenant-mark">
@@ -169,26 +187,22 @@ export function VehicleWorkspace() {
           </div>
         </header>
 
-        <div className="metric-grid" aria-label="Visible fleet summary">
-          <Metric
-            label="Visible vehicles"
-            value={metrics.total}
-            accent="blue"
-          />
-          <Metric
-            label="Operational"
-            value={metrics.available}
-            accent="green"
-          />
-          <Metric label="Maintenance due" value={metrics.due} accent="amber" />
-          <Metric
-            label="Unavailable"
-            value={metrics.unavailable}
-            accent="red"
-          />
-        </div>
+        {canManage ? (
+          <ManagementDashboard session={session} />
+        ) : (
+          <div className="metric-grid" aria-label="Visible fleet summary">
+            <Metric label="Visible vehicles" value={metrics.total} accent="blue" />
+            <Metric label="Operational" value={metrics.available} accent="green" />
+            <Metric label="Maintenance due" value={metrics.due} accent="amber" />
+            <Metric label="Unavailable" value={metrics.unavailable} accent="red" />
+          </div>
+        )}
 
-        <SafetyPanel session={session} />
+        <SafetyPanel
+          session={session}
+          canManage={canManage}
+          onFleetChanged={() => loadFleet()}
+        />
 
         {canManage && (
           <MaintenancePanel session={session} vehicles={vehicles} />
@@ -199,6 +213,8 @@ export function VehicleWorkspace() {
           vehicles={vehicles}
           onFleetChanged={() => loadFleet()}
         />
+
+        {canManage && <OperationsAdminPanel session={session} />}
 
         <section className="fleet-panel">
           <div className="panel-heading">
@@ -1475,32 +1491,348 @@ function WorkOrderPanel({
   );
 }
 
-function SafetyPanel({ session }: { session: Session }) {
-  const [defects, setDefects] = useState<Defect[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+function ManagementDashboard({ session }: { session: Session }) {
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      try {
-        const [openDefects, alerts] = await Promise.all([
-          listDefects(session.accessToken),
-          listNotifications(session.accessToken),
-        ]);
-        if (active) {
-          setDefects(openDefects);
-          setNotifications(alerts.items);
-        }
-      } catch (caught) {
-        if (active) setError(errorMessage(caught));
-      }
+  const refresh = useCallback(async () => {
+    try {
+      setSummary(await getDashboardSummary(session.accessToken));
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught));
     }
-    void load();
-    return () => {
-      active = false;
-    };
   }, [session.accessToken]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
+  return (
+    <section className="command-dashboard" id="dashboard">
+      <div className="command-heading">
+        <div>
+          <p className="section-kicker">Live operational picture</p>
+          <h2>Command dashboard</h2>
+        </div>
+        <button className="text-button" onClick={() => void refresh()}>
+          Refresh
+        </button>
+      </div>
+      {error && <div className="error-banner">{error}</div>}
+      <div className="metric-grid" aria-label="Tenant operations summary">
+        <Metric
+          label="Operational vehicles"
+          value={summary?.vehicles.operational ?? 0}
+          accent="green"
+        />
+        <Metric
+          label="Critical defects"
+          value={summary?.defects.critical ?? 0}
+          accent="red"
+        />
+        <Metric
+          label="Due / overdue service"
+          value={(summary?.maintenance.due ?? 0) + (summary?.maintenance.overdue ?? 0)}
+          accent="amber"
+        />
+        <Metric
+          label="Active work orders"
+          value={summary?.work_orders.active ?? 0}
+          accent="blue"
+        />
+      </div>
+      <div className="command-signals">
+        <span>
+          <small>Fleet unavailable</small>
+          <strong>{summary?.vehicles.unavailable ?? 0}</strong>
+        </span>
+        <span>
+          <small>Unassigned repairs</small>
+          <strong>{summary?.work_orders.unassigned ?? 0}</strong>
+        </span>
+        <span>
+          <small>Awaiting verification</small>
+          <strong>{summary?.work_orders.awaiting_verification ?? 0}</strong>
+        </span>
+        <span>
+          <small>Repair cost · 30 days</small>
+          <strong>
+            {formatMoney(
+              summary?.work_orders.repair_cost_30_days ?? "0",
+              summary?.currency ?? session.identity.organization.default_currency,
+            )}
+          </strong>
+        </span>
+        {summary && (
+          <time dateTime={summary.generated_at}>
+            Updated {relativeTime(summary.generated_at)}
+          </time>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OperationsAdminPanel({ session }: { session: Session }) {
+  const [members, setMembers] = useState<Member[]>([]);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [entityType, setEntityType] = useState("");
+  const [action, setAction] = useState("");
+  const [auditFilters, setAuditFilters] = useState({ entityType: "", action: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [nextMembers, nextEvents] = await Promise.all([
+        listMembers(session.accessToken),
+        listAuditEvents(session.accessToken, {
+          entityType: auditFilters.entityType || undefined,
+          action: auditFilters.action || undefined,
+          limit: 30,
+        }),
+      ]);
+      setMembers(nextMembers);
+      setEvents(nextEvents);
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [auditFilters, session.accessToken]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const assignableRoles =
+    session.identity.role === "owner"
+      ? (["owner", "manager", "driver", "mechanic"] as const)
+      : (["driver", "mechanic"] as const);
+
+  async function addMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    const form = new FormData(event.currentTarget);
+    try {
+      await createMember(session.accessToken, {
+        email: String(form.get("email")),
+        display_name: String(form.get("display_name")),
+        role: String(form.get("role")) as Member["role"],
+        temporary_password: String(form.get("temporary_password")),
+      });
+      event.currentTarget.reset();
+      await refresh();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeMember(
+    member: Member,
+    patch: { role?: Member["role"]; is_active?: boolean },
+  ) {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateMember(session.accessToken, member.membership_id, patch);
+      await refresh();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="operations-panel" id="operations">
+      <div className="operations-heading">
+        <div>
+          <p className="section-kicker">Accountability &amp; access</p>
+          <h2>Audit and team administration</h2>
+        </div>
+        <button className="secondary-button" disabled={busy} onClick={() => void refresh()}>
+          Refresh workspace
+        </button>
+      </div>
+      {error && <div className="error-banner">{error}</div>}
+      <div className="operations-grid">
+        <div className="team-admin">
+          <form className="member-create" onSubmit={addMember}>
+            <h3>Add a team member</h3>
+            <div>
+              <input name="display_name" placeholder="Full name" minLength={2} required />
+              <input name="email" placeholder="Email address" type="email" required />
+              <select name="role" aria-label="New member role">
+                {assignableRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {titleCase(role)}
+                  </option>
+                ))}
+              </select>
+              <input
+                name="temporary_password"
+                placeholder="Temporary password"
+                type="password"
+                minLength={12}
+                required
+              />
+              <button className="primary-button" disabled={busy}>Add member</button>
+            </div>
+            <p>Share the temporary password privately and require it to be replaced.</p>
+          </form>
+          <div className="member-list">
+            {members.map((member) => {
+              const isSelf = member.user_id === session.identity.id;
+              const canEdit =
+                !isSelf &&
+                (session.identity.role === "owner" ||
+                  member.role === "driver" ||
+                  member.role === "mechanic");
+              return (
+                <article key={member.membership_id}>
+                  <span className="user-chip">{initials(member.display_name)}</span>
+                  <div>
+                    <strong>{member.display_name}</strong>
+                    <small>{member.email}</small>
+                  </div>
+                  <select
+                    aria-label={`Role for ${member.display_name}`}
+                    disabled={!canEdit || busy}
+                    value={member.role}
+                    onChange={(event) =>
+                      void changeMember(member, {
+                        role: event.target.value as Member["role"],
+                      })
+                    }
+                  >
+                    {["owner", "manager", "driver", "mechanic"].map((role) => (
+                      <option
+                        key={role}
+                        value={role}
+                        disabled={
+                          session.identity.role !== "owner" &&
+                          (role === "owner" || role === "manager")
+                        }
+                      >
+                        {titleCase(role)}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className={member.is_active ? "member-active" : "member-inactive"}
+                    disabled={!canEdit || busy}
+                    onClick={() => void changeMember(member, { is_active: !member.is_active })}
+                  >
+                    {member.is_active ? "Active" : "Inactive"}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+        <div className="audit-timeline">
+          <form
+            className="audit-filters"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const nextFilters = {
+                entityType: entityType.trim(),
+                action: action.trim(),
+              };
+              if (
+                nextFilters.entityType === auditFilters.entityType &&
+                nextFilters.action === auditFilters.action
+              ) {
+                void refresh();
+              } else {
+                setAuditFilters(nextFilters);
+              }
+            }}
+          >
+            <h3>Operational timeline</h3>
+            <input
+              aria-label="Filter audit entity type"
+              placeholder="Entity type"
+              value={entityType}
+              onChange={(event) => setEntityType(event.target.value)}
+            />
+            <input
+              aria-label="Filter audit action"
+              placeholder="Exact action"
+              value={action}
+              onChange={(event) => setAction(event.target.value)}
+            />
+            <button className="secondary-button">Filter</button>
+          </form>
+          <div className="timeline-list">
+            {events.map((event) => (
+              <article key={event.id}>
+                <span />
+                <div>
+                  <strong>{titleCase(event.action.replaceAll(".", " "))}</strong>
+                  <p>
+                    {event.actor?.display_name ?? "System"} · {titleCase(event.entity_type)}
+                    {event.entity_id ? ` ${event.entity_id.slice(0, 8)}` : ""}
+                  </p>
+                  <small title={event.request_id ?? undefined}>
+                    {new Date(event.created_at).toLocaleString()}
+                  </small>
+                </div>
+              </article>
+            ))}
+            {events.length === 0 && <div className="compact-empty">No matching audit events.</div>}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SafetyPanel({
+  session,
+  canManage,
+  onFleetChanged,
+}: {
+  session: Session;
+  canManage: boolean;
+  onFleetChanged: () => void;
+}) {
+  const [defects, setDefects] = useState<Defect[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [dismissDefectId, setDismissDefectId] = useState<string | null>(null);
+  const [dismissalNote, setDismissalNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [allDefects, alerts] = await Promise.all([
+        listDefects(session.accessToken, {}),
+        listNotifications(session.accessToken),
+      ]);
+      setDefects(
+        allDefects.filter((defect) =>
+          ["open", "triaged", "in_repair"].includes(defect.status),
+        ),
+      );
+      setNotifications(alerts.items);
+      setUnreadCount(alerts.unread_count);
+      setError(null);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [session.accessToken]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   async function dismiss(notificationId: string) {
     try {
@@ -1508,8 +1840,42 @@ function SafetyPanel({ session }: { session: Session }) {
       setNotifications((current) =>
         current.filter((item) => item.id !== notificationId),
       );
+      setUnreadCount((current) => Math.max(0, current - 1));
     } catch (caught) {
       setError(errorMessage(caught));
+    }
+  }
+
+  async function dismissAll() {
+    setBusy(true);
+    try {
+      await markAllNotificationsRead(session.accessToken);
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setDefectStatus(defect: Defect, status: "triaged" | "dismissed") {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateDefect(session.accessToken, defect.id, {
+        status,
+        resolution_note:
+          status === "dismissed" ? dismissalNote.trim() : "Reviewed by fleet management",
+      });
+      setDismissDefectId(null);
+      setDismissalNote("");
+      await load();
+      onFleetChanged();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1520,7 +1886,7 @@ function SafetyPanel({ session }: { session: Session }) {
           <p className="section-kicker">Inspection safety loop</p>
           <h2>Open safety signals</h2>
         </div>
-        <span className="safety-count">{defects.length} open</span>
+        <span className="safety-count">{defects.length} active</span>
       </div>
       {error && (
         <div className="error-banner" role="alert">
@@ -1529,8 +1895,11 @@ function SafetyPanel({ session }: { session: Session }) {
       )}
       <div className="safety-grid">
         <div className="defect-list">
-          {defects.slice(0, 5).map((defect) => (
-            <article className="defect-card" key={defect.id}>
+          {defects.slice(0, 8).map((defect) => (
+            <article
+              className={`defect-card ${dismissDefectId === defect.id ? "expanded" : ""}`}
+              key={defect.id}
+            >
               <span className={`severity-mark severity-${defect.severity}`}>
                 {defect.severity.slice(0, 1).toUpperCase()}
               </span>
@@ -1542,6 +1911,53 @@ function SafetyPanel({ session }: { session: Session }) {
                 <strong>{defect.description}</strong>
                 <span>{titleCase(defect.status)}</span>
               </div>
+              {canManage && defect.status !== "in_repair" && (
+                <div className="defect-actions">
+                  {defect.status === "open" && (
+                    <button
+                      className="secondary-button"
+                      disabled={busy}
+                      onClick={() => void setDefectStatus(defect, "triaged")}
+                    >
+                      Triage
+                    </button>
+                  )}
+                  <button
+                    className="text-button danger"
+                    disabled={busy}
+                    onClick={() => setDismissDefectId(defect.id)}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
+              {dismissDefectId === defect.id && (
+                <form
+                  className="defect-dismiss-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void setDefectStatus(defect, "dismissed");
+                  }}
+                >
+                  <textarea
+                    aria-label="Defect dismissal reason"
+                    minLength={3}
+                    maxLength={2000}
+                    required
+                    value={dismissalNote}
+                    onChange={(event) => setDismissalNote(event.target.value)}
+                    placeholder="Record why this signal is safe to dismiss"
+                  />
+                  <button className="primary-button" disabled={busy}>Confirm dismissal</button>
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() => setDismissDefectId(null)}
+                  >
+                    Cancel
+                  </button>
+                </form>
+              )}
             </article>
           ))}
           {defects.length === 0 && (
@@ -1552,8 +1968,17 @@ function SafetyPanel({ session }: { session: Session }) {
         </div>
         <div className="notification-list">
           <h3>
-            Unread notifications <span>{notifications.length}</span>
+            Unread notifications <span>{unreadCount}</span>
           </h3>
+          {unreadCount > 0 && (
+            <button
+              className="notification-read-all"
+              disabled={busy}
+              onClick={() => void dismissAll()}
+            >
+              Mark all read
+            </button>
+          )}
           {notifications.slice(0, 4).map((notification) => (
             <article key={notification.id}>
               <div>

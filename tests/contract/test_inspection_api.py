@@ -108,6 +108,7 @@ class FakeInspectionService:
 class FakeNotificationService:
     def __init__(self) -> None:
         self.last_scope: tuple[uuid.UUID, uuid.UUID] | None = None
+        self.marked_all_scope: tuple[uuid.UUID, uuid.UUID] | None = None
 
     async def list(
         self,
@@ -119,6 +120,18 @@ class FakeNotificationService:
     ) -> Sequence[Notification]:
         self.last_scope = (organization_id, recipient_user_id)
         return []
+
+    async def unread_count(
+        self, *, organization_id: uuid.UUID, recipient_user_id: uuid.UUID
+    ) -> int:
+        self.last_scope = (organization_id, recipient_user_id)
+        return 3
+
+    async def mark_all_read(
+        self, *, organization_id: uuid.UUID, recipient_user_id: uuid.UUID
+    ) -> int:
+        self.marked_all_scope = (organization_id, recipient_user_id)
+        return 3
 
 
 def test_inspection_submission_requires_authentication_and_idempotency_key() -> None:
@@ -231,7 +244,23 @@ def test_notifications_are_scoped_to_authenticated_recipient() -> None:
     _clear()
 
     assert response.status_code == 200
+    assert response.json()["unread_count"] == 3
     assert notification_service.last_scope == (ORGANIZATION_ID, USER_ID)
+
+
+def test_notifications_can_be_marked_read_in_authenticated_scope() -> None:
+    notification_service = FakeNotificationService()
+    app.dependency_overrides[get_auth_service] = lambda: FakeAuthService(MembershipRole.MANAGER)
+    app.dependency_overrides[get_notification_service] = lambda: notification_service
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/notifications/read-all", headers={"Authorization": "Bearer valid"}
+        )
+    _clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"updated": 3}
+    assert notification_service.marked_all_scope == (ORGANIZATION_ID, USER_ID)
 
 
 def _client(role: MembershipRole) -> tuple[TestClient, FakeInspectionService]:

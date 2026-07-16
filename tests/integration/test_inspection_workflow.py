@@ -8,10 +8,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fleetpulse.audit.models import AuditEvent
+from fleetpulse.audit.service import AuditService
 from fleetpulse.auth.models import OrganizationMembership, User
 from fleetpulse.auth.roles import MembershipRole
+from fleetpulse.dashboard.service import DashboardService
+from fleetpulse.defects.exceptions import DefectNotFoundError, InvalidDefectTransitionError
 from fleetpulse.defects.models import Defect
-from fleetpulse.defects.types import DefectSeverity
+from fleetpulse.defects.service import DefectService
+from fleetpulse.defects.types import DefectSeverity, DefectStatus
 from fleetpulse.inspections.exceptions import (
     IdempotencyPayloadMismatchError,
     InspectionNotFoundError,
@@ -30,6 +34,7 @@ from fleetpulse.inspections.service import (
 )
 from fleetpulse.inspections.types import ResponseType
 from fleetpulse.notifications.models import Notification
+from fleetpulse.notifications.service import NotificationService
 from fleetpulse.organizations.models import Organization
 from fleetpulse.outbox.models import OutboxEvent
 from fleetpulse.vehicles.models import Vehicle, VehicleStatusHistory
@@ -41,6 +46,7 @@ NOW = datetime(2026, 7, 14, 15, 30, tzinfo=UTC)
 @dataclass(frozen=True, slots=True)
 class SafetyFixture:
     organization_id: uuid.UUID
+    manager_user_id: uuid.UUID
     driver_user_id: uuid.UUID
     driver_membership_id: uuid.UUID
     vehicle_id: uuid.UUID
@@ -208,6 +214,139 @@ async def test_inspection_detail_is_tenant_isolated(
         )
 
 
+@pytest.mark.asyncio
+async def test_manager_safety_controls_dashboard_and_audit_are_tenant_isolated(
+    auth_database: async_sessionmaker[AsyncSession],
+) -> None:
+    fleet_a = await _create_safety_fixture(auth_database, "fleet-a")
+    fleet_b = await _create_safety_fixture(auth_database, "fleet-b")
+    inspection_service = InspectionService(session_factory=auth_database, clock=lambda: NOW)
+    submitted = await inspection_service.submit(
+        organization_id=fleet_a.organization_id,
+        driver_membership_id=fleet_a.driver_membership_id,
+        actor_user_id=fleet_a.driver_user_id,
+        idempotency_key="manager-safety-loop",
+        request_id=uuid.uuid4(),
+        submission=_critical_submission(fleet_a),
+    )
+    defect = submitted.defects[0]
+
+    dashboard_service = DashboardService(session_factory=auth_database)
+    fleet_a_summary = await dashboard_service.summary(
+        organization_id=fleet_a.organization_id, currency="CAD"
+    )
+    fleet_b_summary = await dashboard_service.summary(
+        organization_id=fleet_b.organization_id, currency="CAD"
+    )
+
+    assert fleet_a_summary.vehicles.total == 1
+    assert fleet_a_summary.vehicles.unavailable == 1
+    assert fleet_a_summary.defects.active == 1
+    assert fleet_a_summary.defects.critical == 1
+    assert fleet_b_summary.vehicles.total == 1
+    assert fleet_b_summary.vehicles.unavailable == 0
+    assert fleet_b_summary.defects.active == 0
+
+    defect_service = DefectService(session_factory=auth_database)
+    triaged = await defect_service.update_status(
+        organization_id=fleet_a.organization_id,
+        defect_id=defect.id,
+        actor_user_id=fleet_a.manager_user_id,
+        request_id=uuid.uuid4(),
+        next_status=DefectStatus.TRIAGED,
+        resolution_note="Reviewed by dispatch",
+    )
+    dismissed = await defect_service.update_status(
+        organization_id=fleet_a.organization_id,
+        defect_id=defect.id,
+        actor_user_id=fleet_a.manager_user_id,
+        request_id=uuid.uuid4(),
+        next_status=DefectStatus.DISMISSED,
+        resolution_note="Duplicate dashboard warning; brakes verified",
+    )
+
+    assert triaged.status == DefectStatus.TRIAGED
+    assert dismissed.status == DefectStatus.DISMISSED
+    assert dismissed.resolved_at is not None
+    async with auth_database() as session:
+        vehicle = await session.get(Vehicle, fleet_a.vehicle_id)
+        status_events = list(
+            (
+                await session.scalars(
+                    select(OutboxEvent).where(
+                        OutboxEvent.organization_id == fleet_a.organization_id,
+                        OutboxEvent.event_type == "defect.status_changed.v1",
+                    )
+                )
+            ).all()
+        )
+    assert vehicle is not None
+    assert vehicle.status == VehicleStatus.AVAILABLE
+    assert len(status_events) == 2
+
+    notification_service = NotificationService(session_factory=auth_database)
+    assert (
+        await notification_service.unread_count(
+            organization_id=fleet_a.organization_id,
+            recipient_user_id=fleet_a.driver_user_id,
+        )
+        == 2
+    )
+    assert (
+        await notification_service.mark_all_read(
+            organization_id=fleet_a.organization_id,
+            recipient_user_id=fleet_a.driver_user_id,
+        )
+        == 2
+    )
+    assert (
+        await notification_service.unread_count(
+            organization_id=fleet_a.organization_id,
+            recipient_user_id=fleet_a.driver_user_id,
+        )
+        == 0
+    )
+
+    audit_service = AuditService(session_factory=auth_database)
+    fleet_a_events = await audit_service.list(
+        organization_id=fleet_a.organization_id,
+        entity_type="defect",
+        entity_id=defect.id,
+        action=None,
+        actor_user_id=None,
+        limit=50,
+    )
+    fleet_b_events = await audit_service.list(
+        organization_id=fleet_b.organization_id,
+        entity_type="defect",
+        entity_id=defect.id,
+        action=None,
+        actor_user_id=None,
+        limit=50,
+    )
+    assert [record.event.action for record in fleet_a_events].count("defect.status_changed") == 2
+    assert fleet_b_events == []
+
+    with pytest.raises(DefectNotFoundError):
+        await defect_service.update_status(
+            organization_id=fleet_b.organization_id,
+            defect_id=defect.id,
+            actor_user_id=fleet_b.manager_user_id,
+            request_id=uuid.uuid4(),
+            next_status=DefectStatus.TRIAGED,
+            resolution_note=None,
+        )
+    with pytest.raises(InvalidDefectTransitionError):
+        await defect_service.update_status(
+            organization_id=fleet_a.organization_id,
+            defect_id=defect.id,
+            actor_user_id=fleet_a.manager_user_id,
+            request_id=uuid.uuid4(),
+            next_status=DefectStatus.TRIAGED,
+            resolution_note=None,
+        )
+
+
 async def _count(session: AsyncSession, model: type[object]) -> int:
     return int(await session.scalar(select(func.count()).select_from(model)) or 0)
 
@@ -355,6 +494,7 @@ async def _create_safety_fixture(
     driver_user_id, driver_membership_id = users[MembershipRole.DRIVER]
     return SafetyFixture(
         organization_id=organization_id,
+        manager_user_id=users[MembershipRole.MANAGER][0],
         driver_user_id=driver_user_id,
         driver_membership_id=driver_membership_id,
         vehicle_id=vehicle_id,
